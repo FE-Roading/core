@@ -4,6 +4,11 @@ import { isShallow } from '../../reactivity/src/reactive'
 import { ComponentInternalInstance, ComponentOptions } from './component'
 import { ComponentPublicInstance } from './componentPublicInstance'
 
+/**
+ * 自定义Chrome浏览器的开发者控制台输出样式
+ * 
+ * @returns void
+ */
 export function initCustomFormatter() {
   /* eslint-disable no-restricted-globals */
   if (!__DEV__ || typeof window === 'undefined') {

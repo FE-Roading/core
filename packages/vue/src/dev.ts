@@ -1,6 +1,7 @@
 import { initCustomFormatter } from '@vue/runtime-dom'
 
 export function initDev() {
+  // 如果是浏览器环境
   if (__BROWSER__) {
     if (!__ESM_BUNDLER__) {
       console.info(
@@ -9,6 +10,7 @@ export function initDev() {
       )
     }
 
+    // 自定义Chrome浏览器的开发者控制台输出样式
     initCustomFormatter()
   }
 }
