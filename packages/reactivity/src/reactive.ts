@@ -241,6 +241,7 @@ export function toRaw<T>(observed: T): T {
   return raw ? toRaw(raw) : observed
 }
 
+// 调用defineProperty定义一个不可枚举的属性
 export function markRaw<T extends object>(value: T): T {
   def(value, ReactiveFlags.SKIP, true)
   return value

@@ -579,6 +579,14 @@ export function isStatefulComponent(instance: ComponentInternalInstance) {
 
 export let isInSSRComponentSetup = false
 
+/**
+ * 
+ * 1. 如果是服务端渲染：进入时则全局标识位isInSSRComponentSetup设置为true，退出时设置为false
+ * 2. 初始化Props
+ * 3. 初始化slots
+ * 4. 有/无状态组件需要分别处理：有状态——；无状态——不进行任何处理。
+ * 
+ */
 export function setupComponent(
   instance: ComponentInternalInstance,
   isSSR = false
@@ -629,8 +637,7 @@ function setupStatefulComponent(
   }
   // 0. create render proxy property access cache
   instance.accessCache = Object.create(null)
-  // 1. create public instance / render proxy
-  // also mark it raw so it's never observed
+  // 1. create public instance / render proxy also mark it raw so it's never observed
   instance.proxy = markRaw(new Proxy(instance.ctx, PublicInstanceProxyHandlers))
   if (__DEV__) {
     exposePropsOnRenderContext(instance)
@@ -910,6 +917,11 @@ export function createSetupContext(
   }
 }
 
+/**
+ * 为instance增加exposeProxy，暴露以$内部属性，为instance.exposed的ref属性值做一个浅层解包
+ * @param instance 
+ * @returns 
+ */
 export function getExposeProxy(instance: ComponentInternalInstance) {
   if (instance.exposed) {
     return (
@@ -918,6 +930,7 @@ export function getExposeProxy(instance: ComponentInternalInstance) {
         get(target, key: string) {
           if (key in target) {
             return target[key]
+          // key是$开头的内置属性：封装$开头的内部属性
           } else if (key in publicPropertiesMap) {
             return publicPropertiesMap[key](instance)
           }

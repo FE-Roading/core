@@ -26,3 +26,14 @@ tree ./packages -L 1
 └── vue-compat
 ```
 
+## 程序入口
+在Vue3中，常规项目入口main.ts源代码如下:
+```vue
+import { createApp } from "vue"
+
+import App from "./app"
+
+const app = createApp(App)
+app.mount("#app")
+```
+因此，`createApp`可作为源码阅读的入口，该函数位于`packages/runtime-dom/src/index.ts`中。

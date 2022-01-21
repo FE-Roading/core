@@ -305,7 +305,7 @@ export function createHydrationRenderer(
   return baseCreateRenderer(options, createHydrationFunctions)
 }
 
-// overload 1: no hydration
+// overload 1: no hydration，浏览器使用该方式
 function baseCreateRenderer<
   HostNode = RendererNode,
   HostElement = RendererElement
@@ -318,6 +318,12 @@ function baseCreateRenderer(
 ): HydrationRenderer
 
 // implementation
+/**
+ * 创建render，主要是暴露接口如下：
+ * 1. render：1、如果传入vnode，则执行patch；未传入vnode且container._vnode，则卸载节点。2. flushPostFlushCbs()。3、container._vnode = vnode
+ * 2. createApp：用于创建并返回app对象
+ * 
+ */
 function baseCreateRenderer(
   options: RendererOptions,
   createHydrationFns?: typeof createHydrationFunctions
@@ -352,8 +358,8 @@ function baseCreateRenderer(
   // Note: functions inside this closure should use `const xxx = () => {}`
   // style in order to prevent being inlined by minifiers.
   const patch: PatchFn = (
-    n1,
-    n2,
+    n1, // 旧的vNode
+    n2, // 新的vNode
     container,
     anchor = null,
     parentComponent = null,
@@ -362,17 +368,20 @@ function baseCreateRenderer(
     slotScopeIds = null,
     optimized = __DEV__ && isHmrUpdating ? false : !!n2.dynamicChildren
   ) => {
+    // 相同内容，直接返回
     if (n1 === n2) {
       return
     }
 
     // patching & not same type, unmount old tree
+    // 如果存在新旧节点, 且新旧节点类型不同，则销毁旧节点
     if (n1 && !isSameVNodeType(n1, n2)) {
       anchor = getNextHostNode(n1)
       unmount(n1, parentComponent, parentSuspense, true)
       n1 = null
     }
 
+    // 新节点明确禁止优化：主要针对slots、cloneVNodes
     if (n2.patchFlag === PatchFlags.BAIL) {
       optimized = false
       n2.dynamicChildren = null
@@ -407,6 +416,7 @@ function baseCreateRenderer(
         )
         break
       default:
+        // 处理普通 DOM 元素
         if (shapeFlag & ShapeFlags.ELEMENT) {
           processElement(
             n1,
@@ -419,6 +429,7 @@ function baseCreateRenderer(
             slotScopeIds,
             optimized
           )
+        // 处理组件
         } else if (shapeFlag & ShapeFlags.COMPONENT) {
           processComponent(
             n1,
@@ -431,6 +442,7 @@ function baseCreateRenderer(
             slotScopeIds,
             optimized
           )
+        // 处理 TELEPORT
         } else if (shapeFlag & ShapeFlags.TELEPORT) {
           ;(type as typeof TeleportImpl).process(
             n1 as TeleportVNode,
@@ -444,6 +456,7 @@ function baseCreateRenderer(
             optimized,
             internals
           )
+        // 处理 SUSPENSE
         } else if (__FEATURE_SUSPENSE__ && shapeFlag & ShapeFlags.SUSPENSE) {
           ;(type as typeof SuspenseImpl).process(
             n1,
@@ -606,6 +619,14 @@ function baseCreateRenderer(
     }
   }
 
+  /**
+   * 挂载DOM元素
+   * 
+   * 1. 创建 DOM 元素节点
+   * 2. 处理 props
+   * 3. 处理 children
+   * 4. 挂载 DOM 元素到 container 上。
+   */
   const mountElement = (
     vnode: VNode,
     container: RendererElement,
@@ -631,6 +652,7 @@ function baseCreateRenderer(
       // only do this in production since cloned trees cannot be HMR updated.
       el = vnode.el = hostCloneNode(vnode.el)
     } else {
+      // 创建DOM元素节点：直接调用document.createElement创建：select要根据props.multiple来确定是否设置multiple属性；props.is是传给createElement的选项
       el = vnode.el = hostCreateElement(
         vnode.type as string,
         isSVG,
@@ -640,8 +662,10 @@ function baseCreateRenderer(
 
       // mount children first, since some props may rely on child content
       // being already rendered, e.g. `<select value>`
+      // 处理子节点是纯文本的情况：el.textContent=vnode.children
       if (shapeFlag & ShapeFlags.TEXT_CHILDREN) {
         hostSetElementText(el, vnode.children as string)
+      // 处理子节点是数组的情况
       } else if (shapeFlag & ShapeFlags.ARRAY_CHILDREN) {
         mountChildren(
           vnode.children as VNodeArrayChildren,
@@ -658,7 +682,7 @@ function baseCreateRenderer(
       if (dirs) {
         invokeDirectiveHook(vnode, null, parentComponent, 'created')
       }
-      // props
+      // props：处理 props，比如 class、style、event 等属性
       if (props) {
         for (const key in props) {
           if (key !== 'value' && !isReservedProp(key)) {
@@ -716,6 +740,8 @@ function baseCreateRenderer(
     if (needCallTransitionHooks) {
       transition!.beforeEnter(el)
     }
+
+    // 把创建的 DOM 元素节点挂载到 container 上
     hostInsert(el, container, anchor)
     if (
       (vnodeHook = props && props.onVnodeMounted) ||
@@ -768,6 +794,7 @@ function baseCreateRenderer(
     }
   }
 
+  // 挂载子节点是数组：循环遍历children，逐个patch
   const mountChildren: MountChildrenFn = (
     children,
     container,
@@ -780,6 +807,7 @@ function baseCreateRenderer(
     start = 0
   ) => {
     for (let i = start; i < children.length; i++) {
+      // 预处理 child
       const child = (children[i] = optimized
         ? cloneIfMounted(children[i] as VNode)
         : normalizeVNode(children[i]))
@@ -1158,6 +1186,7 @@ function baseCreateRenderer(
     optimized: boolean
   ) => {
     n2.slotScopeIds = slotScopeIds
+    // 旧节点不存在，则挂载或激活
     if (n1 == null) {
       if (n2.shapeFlag & ShapeFlags.COMPONENT_KEPT_ALIVE) {
         ;(parentComponent!.ctx as KeepAliveContext).activate(
@@ -1196,6 +1225,7 @@ function baseCreateRenderer(
     // mounting
     const compatMountInstance =
       __COMPAT__ && initialVNode.isCompatRoot && initialVNode.component
+    // 创建组件实例
     const instance: ComponentInternalInstance =
       compatMountInstance ||
       (initialVNode.component = createComponentInstance(
@@ -1223,6 +1253,7 @@ function baseCreateRenderer(
       if (__DEV__) {
         startMeasure(instance, `init`)
       }
+      // 设置组件实例
       setupComponent(instance)
       if (__DEV__) {
         endMeasure(instance, `init`)
@@ -1243,6 +1274,7 @@ function baseCreateRenderer(
       return
     }
 
+    // 设置并运行带副作用的渲染函数
     setupRenderEffect(
       instance,
       initialVNode,

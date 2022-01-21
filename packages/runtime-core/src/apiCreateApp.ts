@@ -168,12 +168,19 @@ export function createAppContext(): AppContext {
 }
 
 export type CreateAppFunction<HostElement> = (
-  rootComponent: Component,
+  rootComponent: Component, // 根组件
   rootProps?: Data | null
 ) => App<HostElement>
 
 let uid = 0
 
+/**
+ * 创建并返回app对象：get/set劫持，添加use/mixin/component/directive/mount/unmount/provide方法。也有对vue2的兼容性处理
+ * 
+ * @param render 渲染函数
+ * @param hydrate 浏览器端为null
+ * @returns 
+ */
 export function createAppAPI<HostElement>(
   render: RootRenderFunction,
   hydrate?: RootHydrateFunction
@@ -189,6 +196,7 @@ export function createAppAPI<HostElement>(
 
     let isMounted = false
 
+    // 创建App对象
     const app: App = (context.app = {
       _uid: uid++,
       _component: rootComponent as ConcreteComponent,
@@ -280,12 +288,12 @@ export function createAppAPI<HostElement>(
         isSVG?: boolean
       ): any {
         if (!isMounted) {
+          // 创建根组件的 vnode
           const vnode = createVNode(
             rootComponent as ConcreteComponent,
             rootProps
           )
-          // store app context on the root VNode.
-          // this will be set on the root instance on initial mount.
+          // 根context：store app context on the root VNode. this will be set on the root instance on initial mount.
           vnode.appContext = context
 
           // HMR root reload
@@ -298,6 +306,7 @@ export function createAppAPI<HostElement>(
           if (isHydrate && hydrate) {
             hydrate(vnode as VNode<Node, Element>, rootContainer as any)
           } else {
+            // 利用渲染器渲染vnode：rootContainer._vnode中保存vnode
             render(vnode, rootContainer, isSVG)
           }
           isMounted = true
@@ -310,6 +319,7 @@ export function createAppAPI<HostElement>(
             devtoolsInitApp(app, version)
           }
 
+          // 为instance增加exposeProxy，暴露以$内部属性，为instance.exposed的ref属性值做一个浅层解包
           return getExposeProxy(vnode.component!) || vnode.component!.proxy
         } else if (__DEV__) {
           warn(
@@ -349,6 +359,7 @@ export function createAppAPI<HostElement>(
       }
     })
 
+    // vue2的兼容处理
     if (__COMPAT__) {
       installAppCompatProperties(app, context, render)
     }

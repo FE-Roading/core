@@ -138,7 +138,7 @@ const shallowUnwrapHandlers: ProxyHandler<any> = {
     }
   }
 }
-
+// 处理ref对象：自动浅层解包，设置和获取时不需要.value属性
 export function proxyRefs<T extends object>(
   objectWithRefs: T
 ): ShallowUnwrapRef<T> {

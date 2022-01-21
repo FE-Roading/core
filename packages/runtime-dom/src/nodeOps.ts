@@ -6,6 +6,7 @@ const doc = (typeof document !== 'undefined' ? document : null) as Document
 
 const templateContainer = doc && doc.createElement('template')
 
+// html节点方法封装成的mixin
 export const nodeOps: Omit<RendererOptions<Node, Element>, 'patchProp'> = {
   insert: (child, parent, anchor) => {
     parent.insertBefore(child, anchor || null)
@@ -21,6 +22,7 @@ export const nodeOps: Omit<RendererOptions<Node, Element>, 'patchProp'> = {
   createElement: (tag, isSVG, is, props): Element => {
     const el = isSVG
       ? doc.createElementNS(svgNS, tag)
+      // 包含一个属性名为is的对象是用customElements.define()方法定义过的一个自定义元素的标签名。
       : doc.createElement(tag, is ? { is } : undefined)
 
     if (tag === 'select' && props && props.multiple != null) {
