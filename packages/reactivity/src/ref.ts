@@ -85,6 +85,7 @@ export function shallowRef(value?: unknown) {
 }
 
 function createRef(rawValue: unknown, shallow: boolean) {
+  // 如果传入的就是一个 ref，那么返回自身即可，处理嵌套 ref 的情况。
   if (isRef(rawValue)) {
     return rawValue
   }
@@ -104,15 +105,19 @@ class RefImpl<T> {
   }
 
   get value() {
+    // 依赖收集，key 为固定的 value
     trackRefValue(this)
     return this._value
   }
 
   set value(newVal) {
     newVal = this.__v_isShallow ? newVal : toRaw(newVal)
+     // setter，只处理 value 属性的修改
     if (hasChanged(newVal, this._rawValue)) {
       this._rawValue = newVal
+      // 非shallow时，如果值是object时，会转换成reactive类型
       this._value = this.__v_isShallow ? newVal : toReactive(newVal)
+      // 派发通知
       triggerRefValue(this, newVal)
     }
   }

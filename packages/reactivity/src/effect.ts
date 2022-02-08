@@ -44,9 +44,12 @@ export type DebuggerEventExtraInfo = {
   oldTarget?: Map<any, any> | Set<any>
 }
 
+// 全局 effect 栈
 const effectStack: ReactiveEffect[] = []
+// 当前激活的 effect
 let activeEffect: ReactiveEffect | undefined
 
+// 用于拦截Object.keys(target)这类操作时，添加一个该key进行依赖收集
 export const ITERATE_KEY = Symbol(__DEV__ ? 'iterate' : '')
 export const MAP_KEY_ITERATE_KEY = Symbol(__DEV__ ? 'Map key iterate' : '')
 
@@ -68,18 +71,24 @@ export class ReactiveEffect<T = any> {
     public scheduler: EffectScheduler | null = null,
     scope?: EffectScope | null
   ) {
+    // 在scope.active==true时，scope.effects.push(effect)
     recordEffectScope(this, scope)
   }
 
   run() {
+    // 如果是未激活状态，直接返回运行结果
     if (!this.active) {
       return this.fn()
     }
-    if (!effectStack.includes(this)) {
-      try {
-        effectStack.push((activeEffect = this))
-        enableTracking()
 
+    if (!effectStack.includes(this)) {
+    // 如果全局effect栈未包含当前effect
+      try {
+        // 将activeEffect置为当前的effect，并放入effect栈
+        effectStack.push((activeEffect = this))
+        // 开启全局 shouldTrack，允许依赖收集
+        enableTracking()
+        // 1 右移（++effectTrackDepth）位：1*2^(++effectTrackDepth)
         trackOpBit = 1 << ++effectTrackDepth
 
         if (effectTrackDepth <= maxMarkerBits) {
@@ -87,7 +96,7 @@ export class ReactiveEffect<T = any> {
         } else {
           cleanupEffect(this)
         }
-        return this.fn()
+        return this.fn() // this.fn在finally之前执行，但最终结果是在finally执行完成后返回
       } finally {
         if (effectTrackDepth <= maxMarkerBits) {
           finalizeDepMarkers(this)
@@ -95,8 +104,11 @@ export class ReactiveEffect<T = any> {
 
         trackOpBit = 1 << --effectTrackDepth
 
+        // 恢复 shouldTrack 开启之前的状态
         resetTracking()
+        // 出栈
         effectStack.pop()
+        // 指向effect栈最后一个 effect
         const n = effectStack.length
         activeEffect = n > 0 ? effectStack[n - 1] : undefined
       }
@@ -113,7 +125,7 @@ export class ReactiveEffect<T = any> {
     }
   }
 }
-
+// 清空 effect 引用的依赖
 function cleanupEffect(effect: ReactiveEffect) {
   const { deps } = effect
   if (deps.length) {
@@ -166,7 +178,7 @@ export function effect<T = any>(
 export function stop(runner: ReactiveEffectRunner) {
   runner.effect.stop()
 }
-
+// 是否应该收集依赖
 let shouldTrack = true
 const trackStack: boolean[] = []
 
@@ -186,13 +198,16 @@ export function resetTracking() {
 }
 
 export function track(target: object, type: TrackOpTypes, key: unknown) {
+  // 如果不是依赖收集阶段，则直接返回
   if (!isTracking()) {
     return
   }
+  // 每个 target 对应一个 depsMap
   let depsMap = targetMap.get(target)
   if (!depsMap) {
     targetMap.set(target, (depsMap = new Map()))
   }
+  // 每个 key 对应一个 dep 集合
   let dep = depsMap.get(key)
   if (!dep) {
     depsMap.set(key, (dep = createDep()))
@@ -225,7 +240,9 @@ export function trackEffects(
   }
 
   if (shouldTrack) {
+    // 收集当前激活的 effect 作为依赖
     dep.add(activeEffect!)
+    // 当前激活的 effect 收集 dep 集合作为依赖
     activeEffect!.deps.push(dep)
     if (__DEV__ && activeEffect!.onTrack) {
       activeEffect!.onTrack(
@@ -248,18 +265,22 @@ export function trigger(
   oldValue?: unknown,
   oldTarget?: Map<unknown, unknown> | Set<unknown>
 ) {
+  // 通过 targetMap 拿到 target 对应的依赖集合
   const depsMap = targetMap.get(target)
+  // 没有依赖，直接返回
   if (!depsMap) {
     // never been tracked
     return
   }
 
+  // 根据操作类型收集所有的deps
   let deps: (Dep | undefined)[] = []
   if (type === TriggerOpTypes.CLEAR) {
     // collection being cleared
     // trigger all effects for target
     deps = [...depsMap.values()]
   } else if (key === 'length' && isArray(target)) {
+    // 如果是通过设置Array.length来改变数组长度，则将大于长度和length的dep放入deps
     depsMap.forEach((dep, key) => {
       if (key === 'length' || key >= (newValue as number)) {
         deps.push(dep)
@@ -267,6 +288,7 @@ export function trigger(
     })
   } else {
     // schedule runs for SET | ADD | DELETE
+    // SET | ADD | DELETE 操作之一，添加对应的 effects
     if (key !== void 0) {
       deps.push(depsMap.get(key))
     }
@@ -305,6 +327,7 @@ export function trigger(
     : undefined
 
   if (deps.length === 1) {
+  // 如果只有一个依赖，则直接遍历执行effect
     if (deps[0]) {
       if (__DEV__) {
         triggerEffects(deps[0], eventInfo)
@@ -313,12 +336,14 @@ export function trigger(
       }
     }
   } else {
+    // 多个依赖则直接从Set提取出所有effect放置到数组中
     const effects: ReactiveEffect[] = []
     for (const dep of deps) {
       if (dep) {
         effects.push(...dep)
       }
     }
+    // 去重后历执行effect
     if (__DEV__) {
       triggerEffects(createDep(effects), eventInfo)
     } else {
@@ -327,19 +352,23 @@ export function trigger(
   }
 }
 
+// 遍历执行 effects
 export function triggerEffects(
   dep: Dep | ReactiveEffect[],
   debuggerEventExtraInfo?: DebuggerEventExtraInfo
 ) {
-  // spread into array for stabilization
-  for (const effect of isArray(dep) ? dep : [...dep]) {
+  // spread into array for stabilization：主要针对set时，提取所有的元素到数组用于迭代
+  for (const effect of (isArray(dep) ? dep : [...dep])) {
     if (effect !== activeEffect || effect.allowRecurse) {
       if (__DEV__ && effect.onTrigger) {
         effect.onTrigger(extend({ effect }, debuggerEventExtraInfo))
       }
+
       if (effect.scheduler) {
+        // 如果effect定义了调度器，则执行调度器
         effect.scheduler()
       } else {
+        // 直接运行
         effect.run()
       }
     }

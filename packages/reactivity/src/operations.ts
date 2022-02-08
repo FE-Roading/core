@@ -9,7 +9,7 @@ export const enum TrackOpTypes {
 
 export const enum TriggerOpTypes {
   SET = 'set',
-  ADD = 'add',
+  ADD = 'add',  // 添加字段
   DELETE = 'delete',
   CLEAR = 'clear'
 }

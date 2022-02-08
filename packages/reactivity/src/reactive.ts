@@ -13,6 +13,7 @@ import {
 } from './collectionHandlers'
 import { UnwrapRefSimple, Ref } from './ref'
 
+// reactive实例的内置属性enum定义
 export const enum ReactiveFlags {
   SKIP = '__v_skip',
   IS_REACTIVE = '__v_isReactive',
@@ -21,6 +22,7 @@ export const enum ReactiveFlags {
   RAW = '__v_raw'
 }
 
+// 待reactive的target可选 标志位 属性定义
 export interface Target {
   [ReactiveFlags.SKIP]?: boolean
   [ReactiveFlags.IS_REACTIVE]?: boolean
@@ -28,16 +30,17 @@ export interface Target {
   [ReactiveFlags.IS_SHALLOW]?: boolean
   [ReactiveFlags.RAW]?: any
 }
-
+// 使用WeakMap来全局缓存target生成的reactive结果
 export const reactiveMap = new WeakMap<Target, any>()
 export const shallowReactiveMap = new WeakMap<Target, any>()
 export const readonlyMap = new WeakMap<Target, any>()
 export const shallowReadonlyMap = new WeakMap<Target, any>()
 
+// 待reactive的target类型定义
 const enum TargetType {
-  INVALID = 0,
-  COMMON = 1,
-  COLLECTION = 2
+  INVALID = 0, // 不可reactive的类型
+  COMMON = 1, // 可reactive的常规数据类型：Object/Array
+  COLLECTION = 2 // 可reactive的集合数据类型：Map/Set/WeakMap/WeakSet
 }
 
 function targetTypeMap(rawType: string) {
@@ -54,7 +57,11 @@ function targetTypeMap(rawType: string) {
       return TargetType.INVALID
   }
 }
-
+/**
+ * 根据value值返回对应的target类型[TargetType]：如果value的ReactiveFlags.SKIP不为false或value为不可扩展的object，则直接返回为INVALID；否则直接数据类型查询target的类型
+ * @param value 
+ * @returns TargetType attr
+ */
 function getTargetType(value: Target) {
   return value[ReactiveFlags.SKIP] || !Object.isExtensible(value)
     ? TargetType.INVALID
@@ -185,30 +192,33 @@ function createReactiveObject(
   collectionHandlers: ProxyHandler<any>,
   proxyMap: WeakMap<Target, any>
 ) {
+  // 如果target不是object则直接返回，在开发模式会在console中生成warning
   if (!isObject(target)) {
     if (__DEV__) {
       console.warn(`value cannot be made reactive: ${String(target)}`)
     }
     return target
   }
-  // target is already a Proxy, return it.
-  // exception: calling readonly() on a reactive object
+  // target is already a Proxy, return it. exception: calling readonly() on a reactive object
+  // 如果target已经是Proxy则直接返回，例外：readonly(reactive对象)
   if (
     target[ReactiveFlags.RAW] &&
     !(isReadonly && target[ReactiveFlags.IS_REACTIVE])
   ) {
     return target
   }
-  // target already has corresponding Proxy
+  // target already has corresponding Proxy：重复定义同一个target则返回缓存结果
   const existingProxy = proxyMap.get(target)
   if (existingProxy) {
     return existingProxy
   }
-  // only a whitelist of value types can be observed.
+  // only a whitelist of value types can be observed. 只允许targetTypeMap中的非INVALID类型可以定义为reactive
   const targetType = getTargetType(target)
   if (targetType === TargetType.INVALID) {
     return target
   }
+
+  // 定义并缓存proxy后，返回结果
   const proxy = new Proxy(
     target,
     targetType === TargetType.COLLECTION ? collectionHandlers : baseHandlers
