@@ -27,6 +27,7 @@ class ComputedRefImpl<T> {
   public dep?: Dep = undefined
 
   private _value!: T
+  // 表示是否需要重新计算
   private _dirty = true
   public readonly effect: ReactiveEffect<T>
 
@@ -39,7 +40,9 @@ class ComputedRefImpl<T> {
     isReadonly: boolean,
     isSSR: boolean
   ) {
+    
     this.effect = new ReactiveEffect(getter, () => {
+      // set后的re-render中，需要重新计算值
       if (!this._dirty) {
         this._dirty = true
         triggerRefValue(this)
@@ -52,10 +55,12 @@ class ComputedRefImpl<T> {
   get value() {
     // the computed ref may get wrapped by other proxies e.g. readonly() #3376
     const self = toRaw(this)
+    // 触发get的依赖收集
     trackRefValue(self)
+    // 首次调用时，计算具体的值
     if (self._dirty) {
       self._dirty = false
-      self._value = self.effect.run()!
+      self._value = self.effect.run()!  // 运行getter函数来返回结果
     }
     return self._value
   }
@@ -65,6 +70,11 @@ class ComputedRefImpl<T> {
   }
 }
 
+/**
+ * 
+ * @param getter 支持两种格式：getter函数，{get(){},set(){}}对象
+ * @param debugOptions 
+ */
 export function computed<T>(
   getter: ComputedGetter<T>,
   debugOptions?: DebuggerOptions
