@@ -81,12 +81,12 @@ export const createApp = ((...args) => {
     if (!container) return
 
     const component = app._component
+    // 如组件对象没有定义 render 函数和 template 模板，则取容器的 innerHTML 作为组件模板内容
     if (!isFunction(component) && !component.render && !component.template) {
       // __UNSAFE__
       // Reason: potential execution of JS expressions in in-DOM template.
       // The user must make sure the in-DOM template is trusted. If it's
       // rendered by the server, the template should not contain any user data.
-      // 如组件对象没有定义 render 函数和 template 模板，则取容器的 innerHTML 作为组件模板内容
       component.template = container.innerHTML
       // 2.x compat check
       if (__COMPAT__ && __DEV__) {
@@ -104,7 +104,9 @@ export const createApp = ((...args) => {
     }
 
     // clear content before mounting
+    // 挂载前清空容器内容
     container.innerHTML = ''
+    // 调用app.mount挂载根节点
     const proxy = mount(container, false, container instanceof SVGElement)
     if (container instanceof Element) {
       container.removeAttribute('v-cloak')

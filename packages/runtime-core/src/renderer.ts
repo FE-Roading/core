@@ -339,6 +339,7 @@ function baseCreateRenderer(
     setDevtoolsHook(target.__VUE_DEVTOOLS_GLOBAL_HOOK__, target)
   }
 
+  // 结构出dom操作方法
   const {
     insert: hostInsert,
     remove: hostRemove,
@@ -389,20 +390,20 @@ function baseCreateRenderer(
 
     const { type, ref, shapeFlag } = n2
     switch (type) {
-      case Text:
+      case Text: // 文本节点
         processText(n1, n2, container, anchor)
         break
-      case Comment:
+      case Comment:  // 注释节点
         processCommentNode(n1, n2, container, anchor)
         break
-      case Static:
+      case Static:  // 静态节点
         if (n1 == null) {
           mountStaticNode(n2, container, anchor, isSVG)
         } else if (__DEV__) {
           patchStaticNode(n1, n2, container, isSVG)
         }
         break
-      case Fragment:
+      case Fragment:  // 片段节点
         processFragment(
           n1,
           n2,
@@ -596,6 +597,7 @@ function baseCreateRenderer(
   ) => {
     isSVG = isSVG || (n2.type as string) === 'svg'
     if (n1 == null) {
+      // 挂载节点
       mountElement(
         n2,
         container,
@@ -607,6 +609,7 @@ function baseCreateRenderer(
         optimized
       )
     } else {
+      // 更新节点
       patchElement(
         n1,
         n2,
@@ -1368,6 +1371,7 @@ function baseCreateRenderer(
             if (__DEV__) {
               startMeasure(instance, `render`)
             }
+            //  mountComponent
             instance.subTree = renderComponentRoot(instance)
             if (__DEV__) {
               endMeasure(instance, `render`)
@@ -1402,6 +1406,7 @@ function baseCreateRenderer(
           if (__DEV__) {
             startMeasure(instance, `render`)
           }
+          // 渲染组件生成子树 vnode
           const subTree = (instance.subTree = renderComponentRoot(instance))
           if (__DEV__) {
             endMeasure(instance, `render`)
@@ -1409,6 +1414,7 @@ function baseCreateRenderer(
           if (__DEV__) {
             startMeasure(instance, `patch`)
           }
+          // 把子树 vnode 挂载到 container 中
           patch(
             null,
             subTree,
@@ -1421,6 +1427,8 @@ function baseCreateRenderer(
           if (__DEV__) {
             endMeasure(instance, `patch`)
           }
+
+          // 保留渲染生成的子树根 DOM 节点
           initialVNode.el = subTree.el
         }
         // mounted hook

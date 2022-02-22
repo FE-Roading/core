@@ -407,6 +407,8 @@ function createBaseVNode(
   isBlockNode = false,
   needFullChildrenNormalization = false
 ) {
+
+  // 创建vnode对象
   const vnode = {
     __v_isVNode: true,
     __v_skip: true,
@@ -435,6 +437,7 @@ function createBaseVNode(
     appContext: null
   } as VNode
 
+  // 标准化子节点，把不同数据类型的 children 转成数组或者文本类型
   if (needFullChildrenNormalization) {
     normalizeChildren(vnode, children)
     // normalize suspense children
@@ -524,6 +527,7 @@ function _createVNode(
   }
 
   // class & style normalization.
+  // 处理 props 相关逻辑，标准化 class 和 style
   if (props) {
     // for reactive or proxy objects, we need to clone it to enable mutation.
     props = guardReactiveProps(props)!
@@ -542,6 +546,7 @@ function _createVNode(
   }
 
   // encode the vnode type information into a bitmap
+  // 处理 props 相关逻辑，标准化 class 和 style
   const shapeFlag = isString(type)
     ? ShapeFlags.ELEMENT
     : __FEATURE_SUSPENSE__ && isSuspense(type)
