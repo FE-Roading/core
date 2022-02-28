@@ -213,6 +213,9 @@ function createReactiveObject(
     return existingProxy
   }
   // only a whitelist of value types can be observed. 只允许targetTypeMap中的非INVALID类型可以定义为reactive
+  // 1. INVALID：如果value的ReactiveFlags.SKIP不为false或value为不可扩展的object；
+  // 2. COMMON：可reactive的常规数据类型[Object/Array]
+  // 3. COLLECTION：可reactive的集合数据类型[Map/Set/WeakMap/WeakSet]
   const targetType = getTargetType(target)
   if (targetType === TargetType.INVALID) {
     return target

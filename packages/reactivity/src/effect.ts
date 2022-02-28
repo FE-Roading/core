@@ -239,6 +239,7 @@ export function trackEffects(
     shouldTrack = !dep.has(activeEffect!)
   }
 
+  // 是否允许收集依赖的全局开关
   if (shouldTrack) {
     // 收集当前激活的 effect 作为依赖
     dep.add(activeEffect!)
@@ -275,6 +276,7 @@ export function trigger(
 
   // 根据操作类型收集所有的deps
   let deps: (Dep | undefined)[] = []
+  // 清除操作时，需要触发target的所有依赖
   if (type === TriggerOpTypes.CLEAR) {
     // collection being cleared
     // trigger all effects for target
@@ -287,16 +289,15 @@ export function trigger(
       }
     })
   } else {
-    // schedule runs for SET | ADD | DELETE
-    // SET | ADD | DELETE 操作之一，添加对应的 effects
+    // schedule runs for SET | ADD | DELETE操作之一，添加对应的 effects
     if (key !== void 0) {
       deps.push(depsMap.get(key))
     }
 
-    // also run for iteration key on ADD | DELETE | Map.SET
+    // also run for iteration key on ADD | DELETE | Map.SET 迭代相关依赖触发
     switch (type) {
-      case TriggerOpTypes.ADD:
-        if (!isArray(target)) {
+      case TriggerOpTypes.ADD: // add时，对象会触发ITERATE_KEY依赖，map还会多触发MAP_KEY_ITERATE_KEY依赖；数组会触发length依赖
+        if (!isArray(target)) { 
           deps.push(depsMap.get(ITERATE_KEY))
           if (isMap(target)) {
             deps.push(depsMap.get(MAP_KEY_ITERATE_KEY))
@@ -306,7 +307,7 @@ export function trigger(
           deps.push(depsMap.get('length'))
         }
         break
-      case TriggerOpTypes.DELETE:
+      case TriggerOpTypes.DELETE: // delete时，数组单独触发依赖，map会触发ITERATE_KEY依赖，map还会多触发MAP_KEY_ITERATE_KEY依赖
         if (!isArray(target)) {
           deps.push(depsMap.get(ITERATE_KEY))
           if (isMap(target)) {
@@ -314,7 +315,7 @@ export function trigger(
           }
         }
         break
-      case TriggerOpTypes.SET:
+      case TriggerOpTypes.SET: // set时，针对map出发迭代依赖
         if (isMap(target)) {
           deps.push(depsMap.get(ITERATE_KEY))
         }
@@ -336,14 +337,14 @@ export function trigger(
       }
     }
   } else {
-    // 多个依赖则直接从Set提取出所有effect放置到数组中
+    
+    // 所有的effect扁平化去重后，执行依赖
     const effects: ReactiveEffect[] = []
     for (const dep of deps) {
       if (dep) {
         effects.push(...dep)
       }
     }
-    // 去重后历执行effect
     if (__DEV__) {
       triggerEffects(createDep(effects), eventInfo)
     } else {
