@@ -260,6 +260,21 @@ export interface ComponentRenderContext {
   _: ComponentInternalInstance
 }
 
+/**
+ * Vue.js 3.0，为了方便维护，我们把组件中不同状态的数据存储到不同的属性中，比如存储到 setupState、ctx、data、props 中。
+ * 我们在执行组件渲染函数的时候，为了方便用户使用，会直接访问渲染上下文 instance.ctx 中的属性，
+ * 所以我们也要做一层 proxy，对渲染上下文 instance.ctx 属性的访问和修改，代理到对 setupState、ctx、
+ * data、props 中的数据的访问和修改。
+ * 1. 对于非$开头的属性，如果已在accessCache已记录key在哪个位置，则直接访问对应的属性值；
+ * 2. 按优先顺序（setupState、data、props、ctx）访问数据，将key的读取位置缓存到accessCache中；
+ * 3. 尝试访问Vue内部允许的$开头的全局属性：如$el、$data等；
+ * 4. 尝试访问css模块变量(通过 vue-loader 编译的时候注入)；
+ * 5. 尝试访问用于在ctx自定义的属性；
+ * 6. 尝试从全局变量(appContext.config.globalProperties)中访问；
+ * 7. 如果key是以__v开头，返回undefined；
+ * 8. 如果在data中定义了以$开头的变量，则会警告，因为$是保留字符，不会做代理；
+ * 9. 报警高，因为在模板中使用的变量如果没有定义；
+ **/
 export const PublicInstanceProxyHandlers: ProxyHandler<any> = {
   get({ _: instance }: ComponentRenderContext, key: string) {
     const { ctx, setupState, data, props, accessCache, type, appContext } =
@@ -291,7 +306,7 @@ export const PublicInstanceProxyHandlers: ProxyHandler<any> = {
     // prototype) to memoize what access type a key corresponds to.
     let normalizedProps
     if (key[0] !== '$') {
-      const n = accessCache![key]
+      const n = accessCache![key]  // 4表示不存在属性
       if (n !== undefined) {
         switch (n) {
           case AccessTypes.SETUP:

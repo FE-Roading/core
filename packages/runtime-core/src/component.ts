@@ -453,40 +453,41 @@ export function createComponentInstance(
 ) {
   const type = vnode.type as ConcreteComponent
   // inherit parent app context - or - if root, adopt from root vnode
+  // 继承父组件实例上的 appContext，如果是根组件，则直接从根 vnode 中取。
   const appContext =
     (parent ? parent.appContext : vnode.appContext) || emptyAppContext
 
   const instance: ComponentInternalInstance = {
-    uid: uid++,
-    vnode,
-    type,
-    parent,
-    appContext,
-    root: null!, // to be immediately set
-    next: null,
-    subTree: null!, // will be set synchronously right after creation
-    effect: null!,
-    update: null!, // will be set synchronously right after creation
+    uid: uid++, // 组件唯一 id
+    vnode,  // 组件唯一 id
+    type,  // vnode节点类型
+    parent,  // 父组件实例
+    appContext,  // app 上下文
+    root: null!, // to be immediately set app 上下文
+    next: null,  // 新的组件 vnode
+    subTree: null!,  // will be set synchronously right after creation 子节点 vnode
+    effect: null!,  // 响应式相关对象
+    update: null!, // will be set synchronously right after creation 带副作用更新函数
     scope: new EffectScope(true /* detached */),
-    render: null,
-    proxy: null,
+    render: null,  // 渲染函数
+    proxy: null,  // 渲染函数
     exposed: null,
     exposeProxy: null,
-    withProxy: null,
-    provides: parent ? parent.provides : Object.create(appContext.provides),
-    accessCache: null!,
-    renderCache: [],
+    withProxy: null,  // 带有 with 区块的渲染上下文代理
+    provides: parent ? parent.provides : Object.create(appContext.provides),  // 依赖注入相关
+    accessCache: null!,  // 渲染代理的属性访问缓存：缓存被访问key存储在哪类属性中(如0-setup，1-data)
+    renderCache: [],  // 渲染缓存
 
     // local resovled assets
-    components: null,
-    directives: null,
+    components: null,  // 已注册的组件
+    directives: null,  // 已注册的指令
 
     // resolved props and emits options
     propsOptions: normalizePropsOptions(type, appContext),
     emitsOptions: normalizeEmitsOptions(type, appContext),
 
     // emit
-    emit: null!, // to be set immediately
+    emit: null!, // to be set immediately  派发事件方法
     emitted: null,
 
     // props default value
@@ -496,47 +497,51 @@ export function createComponentInstance(
     inheritAttrs: type.inheritAttrs,
 
     // state
-    ctx: EMPTY_OBJ,
-    data: EMPTY_OBJ,
-    props: EMPTY_OBJ,
-    attrs: EMPTY_OBJ,
-    slots: EMPTY_OBJ,
-    refs: EMPTY_OBJ,
-    setupState: EMPTY_OBJ,
-    setupContext: null,
+    ctx: EMPTY_OBJ,  // 渲染上下文
+    data: EMPTY_OBJ,  // data数据
+    props: EMPTY_OBJ,  // props数据
+    attrs: EMPTY_OBJ,  // 普通属性
+    slots: EMPTY_OBJ,  // 插槽相关
+    refs: EMPTY_OBJ,  // 组件或DOM的ref引用
+    setupState: EMPTY_OBJ,  // setup 函数返回的响应式结果
+    setupContext: null,  // setup 函数上下文数据
 
     // suspense related
-    suspense,
+    suspense,  // suspense 相关
     suspenseId: suspense ? suspense.pendingId : 0,
-    asyncDep: null,
-    asyncResolved: false,
+    asyncDep: null,  // suspense 异步依赖
+    asyncResolved: false,  // suspense 异步依赖是否都已处理
 
     // lifecycle hooks
     // not using enums here because it results in computed properties
-    isMounted: false,
-    isUnmounted: false,
-    isDeactivated: false,
-    bc: null,
-    c: null,
-    bm: null,
-    m: null,
-    bu: null,
-    u: null,
-    um: null,
-    bum: null,
-    da: null,
-    a: null,
-    rtg: null,
-    rtc: null,
-    ec: null,
-    sp: null
+    isMounted: false,  // 是否已挂载
+    isUnmounted: false,  // 是否已卸载
+    isDeactivated: false,  // 是否激活
+    bc: null,  // 生命周期钩子：before create
+    c: null,  // 生命周期钩子：created
+    bm: null,  // 生命周期钩子：before mount
+    m: null,  // 生命周期钩子：mounted
+    bu: null,  // 生命周期钩子：before update
+    u: null,  // 生命周期钩子：updated
+    um: null,  // 生命周期钩子：umounted
+    bum: null,  // 生命周期钩子：before unmounted
+    da: null,  // 生命周期钩子：deactived
+    a: null,  // 生命周期钩子：actived
+    rtg: null,  // 生命周期钩子：render triggered
+    rtc: null,  // 生命周期钩子：render tracked
+    ec: null,  // 生命周期钩子：error captured
+    sp: null  // 生命周期钩子：onServerPrefetch
   }
+
+  // 初始化渲染上下文
   if (__DEV__) {
     instance.ctx = createDevRenderContext(instance)
   } else {
     instance.ctx = { _: instance }
   }
+  // 初始化根组件指针
   instance.root = parent ? parent.root : instance
+  // 初始化派发事件方法
   instance.emit = emit.bind(null, instance)
 
   // apply custom element special handling
@@ -635,21 +640,25 @@ function setupStatefulComponent(
       )
     }
   }
-  // 0. create render proxy property access cache
+  // 0. create render proxy property access cache 
+  // 创建渲染代理的属性访问缓存
   instance.accessCache = Object.create(null)
   // 1. create public instance / render proxy also mark it raw so it's never observed
+  // 创建渲染上下文代理
   instance.proxy = markRaw(new Proxy(instance.ctx, PublicInstanceProxyHandlers))
   if (__DEV__) {
     exposePropsOnRenderContext(instance)
   }
-  // 2. call setup()
+  // 2. call setup() 调用setup函数
   const { setup } = Component
   if (setup) {
+    // 如果 setup 函数带参数，则创建一个 setupContext
     const setupContext = (instance.setupContext =
       setup.length > 1 ? createSetupContext(instance) : null)
 
     setCurrentInstance(instance)
     pauseTracking()
+    // 执行 setup 函数，获取结果
     const setupResult = callWithErrorHandling(
       setup,
       instance,
@@ -658,7 +667,8 @@ function setupStatefulComponent(
     )
     resetTracking()
     unsetCurrentInstance()
-
+    
+    // 异步setup函数处理
     if (isPromise(setupResult)) {
       setupResult.then(unsetCurrentInstance, unsetCurrentInstance)
 
@@ -682,9 +692,11 @@ function setupStatefulComponent(
         )
       }
     } else {
+      // 执行 setup 函数，获取结果
       handleSetupResult(instance, setupResult, isSSR)
     }
   } else {
+    // 完成组件实例设置
     finishComponentSetup(instance, isSSR)
   }
 }
