@@ -24,43 +24,42 @@ export interface WritableComputedOptions<T> {
 }
 
 class ComputedRefImpl<T> {
-  public dep?: Dep = undefined
+  public dep?: Dep = undefined  // 依赖集合
 
-  private _value!: T
-  // 表示是否需要重新计算
-  private _dirty = true
+  private _value!: T  // 原始值
+  private _dirty = true  // 表示是否需要重新计算
   public readonly effect: ReactiveEffect<T>
 
-  public readonly __v_isRef = true
-  public readonly [ReactiveFlags.IS_READONLY]: boolean
+  public readonly __v_isRef = true  // computed的类型检测实际为ref类型
+  public readonly [ReactiveFlags.IS_READONLY]: boolean  // 是否只读
 
   constructor(
     getter: ComputedGetter<T>,
     private readonly _setter: ComputedSetter<T>,
-    isReadonly: boolean,
+    isReadonly: boolean, // 只定义getter则默认为readonly
     isSSR: boolean
   ) {
     
     this.effect = new ReactiveEffect(getter, () => {
-      // set后的re-render中，需要重新计算值
+      // 当依赖更新后，将_dirty置为true——在下次获取值时需要重新求值。如果本身根本未被使用则进行高操作
       if (!this._dirty) {
         this._dirty = true
-        triggerRefValue(this)
+        triggerRefValue(this)  // 触发依赖更新
       }
     })
-    this.effect.active = !isSSR
+    this.effect.active = !isSSR  // 服务器渲染时，active字段为false
     this[ReactiveFlags.IS_READONLY] = isReadonly
   }
 
   get value() {
     // the computed ref may get wrapped by other proxies e.g. readonly() #3376
     const self = toRaw(this)
-    // 触发get的依赖收集
+    // 触发get的依赖收集：ref的函数
     trackRefValue(self)
     // 首次调用时，计算具体的值
     if (self._dirty) {
       self._dirty = false
-      self._value = self.effect.run()!  // 运行getter函数来返回结果
+      self._value = self.effect.run()!  // 运行getter函数来返回结果，并触发依赖收集将computed.effect添加到被引用数据的dep中
     }
     return self._value
   }
@@ -91,6 +90,7 @@ export function computed<T>(
   let getter: ComputedGetter<T>
   let setter: ComputedSetter<T>
 
+  // 如果只传入一个函数，则认为只定义了get，如果设置值时会触发警告
   const onlyGetter = isFunction(getterOrOptions)
   if (onlyGetter) {
     getter = getterOrOptions

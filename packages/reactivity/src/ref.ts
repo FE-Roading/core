@@ -101,7 +101,7 @@ class RefImpl<T> {
 
   constructor(value: T, public readonly __v_isShallow: boolean) {
     this._rawValue = __v_isShallow ? value : toRaw(value)  // 解构value的基础值，主要是针对reactive value
-    this._value = __v_isShallow ? value : toReactive(value)  // 如果是对象，则使用reactive转换
+    this._value = __v_isShallow ? value : toReactive(value)  // 如果是对象或数组，则使用reactive转换
   }
 
   get value() {
