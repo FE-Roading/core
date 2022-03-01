@@ -17,13 +17,12 @@ import {
 type KeyToDepMap = Map<any, Dep>
 const targetMap = new WeakMap<any, KeyToDepMap>()
 
-// The number of effects currently being tracked recursively.
-let effectTrackDepth = 0
-
-export let trackOpBit = 1
-
+// The number of effects currently being tracked recursively. 记录当前effect所在的递归层级记录
+let effectTrackDepth = 0 // 递归层级计数器
+export let trackOpBit = 1 // 递归层级的bit记录，可用于位运算提高效率
 /**
- * The bitwise track markers support at most 30 levels of recursion.
+ * 允许effect执行栈的最大层级
+ * The bitwise track markers support at most 30 levels of recursion. 
  * This value is chosen to enable modern JS engines to use a SMI on all platforms.
  * When recursion depth is greater, fall back to using a full cleanup.
  */
@@ -54,24 +53,24 @@ export const ITERATE_KEY = Symbol(__DEV__ ? 'iterate' : '')
 export const MAP_KEY_ITERATE_KEY = Symbol(__DEV__ ? 'Map key iterate' : '')
 
 export class ReactiveEffect<T = any> {
-  active = true
-  deps: Dep[] = []
+  active = true  // 是否激活标志位
+  deps: Dep[] = []  // 当前effect的所有dep集合
 
   // can be attached after creation
-  computed?: boolean
-  allowRecurse?: boolean
-  onStop?: () => void
+  computed?: boolean  // 是否为计算属性
+  allowRecurse?: boolean  // 是否允许递归
+  onStop?: () => void  // 停止监听时触发
   // dev only
-  onTrack?: (event: DebuggerEvent) => void
+  onTrack?: (event: DebuggerEvent) => void  // 追踪时触发
   // dev only
-  onTrigger?: (event: DebuggerEvent) => void
+  onTrigger?: (event: DebuggerEvent) => void  // 触发回调时触发
 
   constructor(
     public fn: () => T,
-    public scheduler: EffectScheduler | null = null,
+    public scheduler: EffectScheduler | null = null,  // 自定义的调度执行函数
     scope?: EffectScope | null
   ) {
-    // 在scope.active==true时，scope.effects.push(effect)
+    // 在(scope || activeEffectScope)?.active==true时，scope.effects.push(this)
     recordEffectScope(this, scope)
   }
 
@@ -81,32 +80,33 @@ export class ReactiveEffect<T = any> {
       return this.fn()
     }
 
-    if (!effectStack.includes(this)) {
-    // 如果全局effect栈未包含当前effect
+    if (!effectStack.includes(this)) {  // 如果全局effect栈未包含当前effect
       try {
         // 将activeEffect置为当前的effect，并放入effect栈
         effectStack.push((activeEffect = this))
-        // 开启全局 shouldTrack，允许依赖收集
+        // 开启全局 shouldTrack，允许依赖收集。原值入栈
         enableTracking()
-        // 1 右移（++effectTrackDepth）位：1*2^(++effectTrackDepth)
+        // 递归层级记录————1 右移（++effectTrackDepth）位：1*2^(++effectTrackDepth)
         trackOpBit = 1 << ++effectTrackDepth
 
         if (effectTrackDepth <= maxMarkerBits) {
+          // 如果未超过允许的最大执行栈层级：将this.deps中的每个dep.w |= trackOpBit
           initDepMarkers(this)
         } else {
+          // 超过：清除将this.deps中的每个dep包含的this，并将this.deps=[]
           cleanupEffect(this)
         }
-        return this.fn() // this.fn在finally之前执行，但最终结果是在finally执行完成后返回
-      } finally {
+        return this.fn() // 执行结果(在finally执行完成后返回)
+      } finally { // effect相关信息还原为之前的状态
         if (effectTrackDepth <= maxMarkerBits) {
-          finalizeDepMarkers(this)
+          finalizeDepMarkers(this) // 清除effect.deps中(wasTracked && !newTracked)的dep，清理dep.w/n位
         }
-
+        // 递归层级的标志位还原
         trackOpBit = 1 << --effectTrackDepth
 
         // 恢复 shouldTrack 开启之前的状态
         resetTracking()
-        // 出栈
+        // effect出栈
         effectStack.pop()
         // 指向effect栈最后一个 effect
         const n = effectStack.length
@@ -125,7 +125,7 @@ export class ReactiveEffect<T = any> {
     }
   }
 }
-// 清空 effect 引用的依赖
+// 清空当前effect的deps中的当前effect
 function cleanupEffect(effect: ReactiveEffect) {
   const { deps } = effect
   if (deps.length) {
@@ -142,11 +142,11 @@ export interface DebuggerOptions {
 }
 
 export interface ReactiveEffectOptions extends DebuggerOptions {
-  lazy?: boolean
-  scheduler?: EffectScheduler
+  lazy?: boolean                 // 是否延迟触发 effect
+  scheduler?: EffectScheduler    // 调度函数
   scope?: EffectScope
-  allowRecurse?: boolean
-  onStop?: () => void
+  allowRecurse?: boolean         // 是否允许递归
+  onStop?: () => void            // 停止监听时触发
 }
 
 export interface ReactiveEffectRunner<T = any> {
@@ -158,18 +158,23 @@ export function effect<T = any>(
   fn: () => T,
   options?: ReactiveEffectOptions
 ): ReactiveEffectRunner {
+  // 如果已经是 `effect` 先重置为原始对象
   if ((fn as ReactiveEffectRunner).effect) {
     fn = (fn as ReactiveEffectRunner).effect.fn
   }
 
   const _effect = new ReactiveEffect(fn)
+  // 合并配置
   if (options) {
     extend(_effect, options)
     if (options.scope) recordEffectScope(_effect, options.scope)
   }
+  // 如果不指定lazy选项，会立即执行一次
   if (!options || !options.lazy) {
     _effect.run()
   }
+
+  // 返回一个effect执行函数(已绑定this指向)，并绑定effect实例属性
   const runner = _effect.run.bind(_effect) as ReactiveEffectRunner
   runner.effect = _effect
   return runner
@@ -228,9 +233,9 @@ export function trackEffects(
   dep: Dep,
   debuggerEventExtraInfo?: DebuggerEventExtraInfo
 ) {
-  let shouldTrack = false
-  if (effectTrackDepth <= maxMarkerBits) {
-    if (!newTracked(dep)) {
+  let shouldTrack = false  // 是否允许收集依赖
+  if (effectTrackDepth <= maxMarkerBits) { // 如果全局effect递归层级深度未超过最大值
+    if (!newTracked(dep)) {  // 如果该dep是新创建的，dep.n=trackOpBit
       dep.n |= trackOpBit // set newly tracked
       shouldTrack = !wasTracked(dep)
     }

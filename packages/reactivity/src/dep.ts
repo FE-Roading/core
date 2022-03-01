@@ -9,11 +9,11 @@ export type Dep = Set<ReactiveEffect> & TrackedMarkers
  */
 type TrackedMarkers = {
   /**
-   * wasTracked
+   * wasTracked：新建时默认为0，在effect.run时会被赋值为trackOpBit
    */
   w: number
   /**
-   * newTracked
+   * newTracked：新建时默认为0，track时会被置为trackOpBit
    */
   n: number
 }
@@ -37,6 +37,10 @@ export const initDepMarkers = ({ deps }: ReactiveEffect) => {
   }
 }
 
+/**
+ * 清除effect.deps中(wasTracked && !newTracked)的dep，清理dep.w/n位
+ * @param effect 
+ */
 export const finalizeDepMarkers = (effect: ReactiveEffect) => {
   const { deps } = effect
   if (deps.length) {
