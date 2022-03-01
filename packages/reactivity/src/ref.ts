@@ -93,15 +93,15 @@ function createRef(rawValue: unknown, shallow: boolean) {
 }
 
 class RefImpl<T> {
-  private _value: T
-  private _rawValue: T
+  private _value: T  // 内部存储的ref.value
+  private _rawValue: T // 解构value的基础值，主要是针对reactive value
 
-  public dep?: Dep = undefined
-  public readonly __v_isRef = true
+  public dep?: Dep = undefined  // 所有依赖管理
+  public readonly __v_isRef = true  // ref类型标志位
 
   constructor(value: T, public readonly __v_isShallow: boolean) {
-    this._rawValue = __v_isShallow ? value : toRaw(value)
-    this._value = __v_isShallow ? value : toReactive(value)
+    this._rawValue = __v_isShallow ? value : toRaw(value)  // 解构value的基础值，主要是针对reactive value
+    this._value = __v_isShallow ? value : toReactive(value)  // 如果是对象，则使用reactive转换
   }
 
   get value() {
@@ -112,7 +112,7 @@ class RefImpl<T> {
 
   set value(newVal) {
     newVal = this.__v_isShallow ? newVal : toRaw(newVal)
-     // setter，只处理 value 属性的修改
+    // setter，只处理 value 属性的修改
     if (hasChanged(newVal, this._rawValue)) {
       this._rawValue = newVal
       // 非shallow时，如果值是object时，会转换成reactive类型
