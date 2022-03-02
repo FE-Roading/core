@@ -199,17 +199,18 @@ function doWatch(
     )
   }
 
+  // 当前组件实例 
   const instance = currentInstance
-  let getter: () => any
-  let forceTrigger = false
-  let isMultiSource = false
+  let getter: () => any  // 保存最终的getter，格式化为函数，对于function参数直接返回执行结果，ref参数返回ref.value
+  let forceTrigger = false  // 如果source是shallowReactive或者source为数组时包含reactive源
+  let isMultiSource = false  // 是否包含多个source
 
   if (isRef(source)) {
     getter = () => source.value
     forceTrigger = isShallow(source)
   } else if (isReactive(source)) {
     getter = () => source
-    deep = true
+    deep = true  // 如果监听的时reactive，则直接置为深度监听
   } else if (isArray(source)) {
     isMultiSource = true
     forceTrigger = source.some(isReactive)
@@ -226,13 +227,15 @@ function doWatch(
         }
       })
   } else if (isFunction(source)) {
+    // 回调函数是否存在：对于 watch API 来说，cb 是一定存在且是一个回调函数。
     if (cb) {
       // getter with cb
       getter = () =>
         callWithErrorHandling(source, instance, ErrorCodes.WATCH_GETTER)
     } else {
-      // no cb -> simple effect
+      // no cb -> simple effect，针对watchEffect场景
       getter = () => {
+        // 如果组件已经被卸载，直接退出
         if (instance && instance.isUnmounted) {
           return
         }
@@ -266,12 +269,14 @@ function doWatch(
       return val
     }
   }
-
+  // 深度监听时，如果存在回调，使用 traverse 来包裹 getter 函数，对数据源中的每个属性递归遍历进行监听。
   if (cb && deep) {
     const baseGetter = getter
     getter = () => traverse(baseGetter())
   }
 
+  // 在onCleanup执行过程中，给clean函数赋值。当副作用函数执行一些异步的副作用，
+  // 这些响应需要在其失效时清除，所以侦听副作用传入的函数可以接收一个 onCleanup 函数作为入参，用来注册清理失效时的回调。
   let cleanup: () => void
   let onCleanup: OnCleanup = (fn: () => void) => {
     cleanup = effect.onStop = () => {
@@ -296,14 +301,17 @@ function doWatch(
     return NOOP
   }
 
+  // 旧值初始值 
   let oldValue = isMultiSource ? [] : INITIAL_WATCHER_VALUE
+  // 声明一个 job 调度器任务，暂时不关注内部逻辑
   const job: SchedulerJob = () => {
-    if (!effect.active) {
+    if (!effect.active) {  // 如果副作用以停用则直接返回
       return
     }
     if (cb) {
-      // watch(source, cb)
+      // watch(source, cb)，执行effect来获取newValue
       const newValue = effect.run()
+      // 如果是 deep 或 forceTrigger 或 值有更新
       if (
         deep ||
         forceTrigger ||
@@ -316,16 +324,20 @@ function doWatch(
           isArray(newValue) &&
           isCompatEnabled(DeprecationTypes.WATCH_ARRAY, instance))
       ) {
-        // cleanup before running cb again
+        // cleanup before running cb again  当回调再次执行前先清除副作用
         if (cleanup) {
           cleanup()
         }
+
+        // 触发 watch api 的回调，并将 newValue、oldValue、onInvalidate 传入
         callWithAsyncErrorHandling(cb, instance, ErrorCodes.WATCH_CALLBACK, [
           newValue,
           // pass undefined as the old value when it's changed for the first time
           oldValue === INITIAL_WATCHER_VALUE ? undefined : oldValue,
           onCleanup
         ])
+
+        // 触发回调后，更新 oldValue
         oldValue = newValue
       }
     } else {
@@ -336,12 +348,13 @@ function doWatch(
 
   // important: mark the job as a watcher callback so that scheduler knows
   // it is allowed to self-trigger (#1727)
+  // 重要：让调度器任务作为侦听器的回调以至于调度器能知道它可以被允许自己派发更新
   job.allowRecurse = !!cb
 
-  let scheduler: EffectScheduler
-  if (flush === 'sync') {
+  let scheduler: EffectScheduler  // 声明一个调度器
+  if (flush === 'sync') {  // 这个调度器函数会立即被执行
     scheduler = job as any // the scheduler function gets called directly
-  } else if (flush === 'post') {
+  } else if (flush === 'post') {   // 调度器会将任务推入一个延迟执行的队列中
     scheduler = () => queuePostRenderEffect(job, instance && instance.suspense)
   } else {
     // default: 'pre'
@@ -351,6 +364,7 @@ function doWatch(
       } else {
         // with 'pre' option, the first call must happen before
         // the component is mounted so it is called synchronously.
+        // 在 pre 选型中，第一次调用必须发生在组件挂载之前，所以这次调用是同步的
         job()
       }
     }
@@ -365,12 +379,12 @@ function doWatch(
 
   // initial run
   if (cb) {
-    if (immediate) {
+    if (immediate) { // 如果指定立即执行，则手动运行job
       job()
     } else {
       oldValue = effect.run()
     }
-  } else if (flush === 'post') {
+  } else if (flush === 'post') { // 如果调用时机为 post，则推入延迟执行队列
     queuePostRenderEffect(
       effect.run.bind(effect),
       instance && instance.suspense
@@ -379,6 +393,7 @@ function doWatch(
     effect.run()
   }
 
+  // 返回一个函数，用以显式的结束侦听
   return () => {
     effect.stop()
     if (instance && instance.scope) {
