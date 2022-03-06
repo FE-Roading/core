@@ -218,6 +218,7 @@ export function advancePositionWithClone(
 
 // advance by mutation without cloning (for performance reasons), since this
 // gets called a lot in the parser
+// context的位置相关属性(line/column/offset)更新：根据source内容——主要处理source中包含换行符的情况
 export function advancePositionWithMutation(
   pos: Position,
   source: string,

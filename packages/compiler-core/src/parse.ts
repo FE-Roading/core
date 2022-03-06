@@ -105,8 +105,12 @@ export function baseParse(
   content: string,
   options: ParserOptions = {}
 ): RootNode {
+  // 创建解析上下文 
   const context = createParserContext(content, options)
+  // 返回 context的解析位置相关属性{ column, line, offset }
   const start = getCursor(context)
+
+  // 先解析子节点，再为整体创建 AST 根节点
   return createRoot(
     parseChildren(context, TextModes.DATA, []),
     getSelection(context, start)
@@ -128,14 +132,14 @@ function createParserContext(
         : rawOptions[key]
   }
   return {
-    options,
-    column: 1,
-    line: 1,
-    offset: 0,
-    originalSource: content,
-    source: content,
-    inPre: false,
-    inVPre: false,
+    options,  // 解析相关配置
+    column: 1,  // 当前代码的列号
+    line: 1,  // 表示当前代码的行号
+    offset: 0,  // 当前代码相对于原始代码的偏移量
+    originalSource: content,  // 完整的原始代码
+    source: content,  // 当前剩余未解析的代码
+    inPre: false,  // 当前代码中是否在pre标签内
+    inVPre: false,  // 当前代码是否在 v-pre 指令的环境下
     onWarn: options.onWarn
   }
 }
@@ -145,31 +149,34 @@ function parseChildren(
   mode: TextModes,
   ancestors: ElementNode[]
 ): TemplateChildNode[] {
+  // 获取父级节点
   const parent = last(ancestors)
+  // 创建namespace：优先取父级的，没有则默认为HTML
   const ns = parent ? parent.ns : Namespaces.HTML
   const nodes: TemplateChildNode[] = []
 
+  // 自顶向下分析代码，生成 nodes 
   while (!isEnd(context, mode, ancestors)) {
     __TEST__ && assert(context.source.length > 0)
     const s = context.source
     let node: TemplateChildNode | TemplateChildNode[] | undefined = undefined
 
     if (mode === TextModes.DATA || mode === TextModes.RCDATA) {
-      if (!context.inVPre && startsWith(s, context.options.delimiters[0])) {
+      if (!context.inVPre && startsWith(s, context.options.delimiters[0])) { // 处理 {{ 插值代码 
         // '{{'
         node = parseInterpolation(context, mode)
-      } else if (mode === TextModes.DATA && s[0] === '<') {
+      } else if (mode === TextModes.DATA && s[0] === '<') {  // 处理 < 开头的代码 
         // https://html.spec.whatwg.org/multipage/parsing.html#tag-open-state
-        if (s.length === 1) {
+        if (s.length === 1) { // 处理 < 开头的代码 
           emitError(context, ErrorCodes.EOF_BEFORE_TAG_NAME, 1)
-        } else if (s[1] === '!') {
+        } else if (s[1] === '!') {  // 处理 <! 开头的代码 
           // https://html.spec.whatwg.org/multipage/parsing.html#markup-declaration-open-state
-          if (startsWith(s, '<!--')) {
+          if (startsWith(s, '<!--')) {  // 处理注释节点 
             node = parseComment(context)
-          } else if (startsWith(s, '<!DOCTYPE')) {
+          } else if (startsWith(s, '<!DOCTYPE')) { // 处理注释节点 
             // Ignore DOCTYPE by a limitation.
             node = parseBogusComment(context)
-          } else if (startsWith(s, '<![CDATA[')) {
+          } else if (startsWith(s, '<![CDATA[')) { // 处理 <![CDATA[ 节点 
             if (ns !== Namespaces.HTML) {
               node = parseCDATA(context, ancestors)
             } else {
@@ -180,19 +187,21 @@ function parseChildren(
             emitError(context, ErrorCodes.INCORRECTLY_OPENED_COMMENT)
             node = parseBogusComment(context)
           }
-        } else if (s[1] === '/') {
+        } else if (s[1] === '/') {  // 处理 <![CDATA[ 节点 
           // https://html.spec.whatwg.org/multipage/parsing.html#end-tag-open-state
-          if (s.length === 2) {
+          if (s.length === 2) {  // s 长度为 2，说明代码结尾是 </，报错
             emitError(context, ErrorCodes.EOF_BEFORE_TAG_NAME, 2)
-          } else if (s[2] === '>') {
+          } else if (s[2] === '>') { // 说明代码结尾是 </>，报错
             emitError(context, ErrorCodes.MISSING_END_TAG_NAME, 2)
             advanceBy(context, 3)
             continue
           } else if (/[a-z]/i.test(s[2])) {
+            // 多余的结束标签，因为结束标签会直接在 parseElement 解析完成 
             emitError(context, ErrorCodes.X_INVALID_END_TAG)
             parseTag(context, TagType.End, parent)
             continue
           } else {
+            // 标签名不合法
             emitError(
               context,
               ErrorCodes.INVALID_FIRST_CHARACTER_OF_TAG_NAME,
@@ -201,6 +210,7 @@ function parseChildren(
             node = parseBogusComment(context)
           }
         } else if (/[a-z]/i.test(s[1])) {
+          // 解析标签元素节点 
           node = parseElement(context, ancestors)
 
           // 2.x <template> with no directive compat
@@ -238,20 +248,20 @@ function parseChildren(
         }
       }
     }
-    if (!node) {
+    if (!node) {  // 解析标签元素节点 
       node = parseText(context, mode)
     }
 
-    if (isArray(node)) {
+    if (isArray(node)) {  // 如果 node 是数组，则遍历添加 
       for (let i = 0; i < node.length; i++) {
         pushNode(nodes, node[i])
       }
-    } else {
+    } else {  // 添加单个 node 
       pushNode(nodes, node)
     }
   }
 
-  // Whitespace handling strategy like v2
+  // Whitespace handling strategy like v2：空格和空字符串节点合并
   let removedWhitespace = false
   if (mode !== TextModes.RAWTEXT && mode !== TextModes.RCDATA) {
     const shouldCondense = context.options.whitespace !== 'preserve'
@@ -281,7 +291,7 @@ function parseChildren(
             // Otherwise, the whitespace is condensed into a single space
             node.content = ' '
           }
-        } else if (shouldCondense) {
+        } else if (shouldCondense) {  // 空格合并成一个
           // in condense mode, consecutive whitespaces in text are condensed
           // down to a single space.
           node.content = node.content.replace(/[\t\r\n\f ]+/g, ' ')
@@ -352,23 +362,27 @@ function parseComment(context: ParserContext): CommentNode {
   const start = getCursor(context)
   let content: string
 
-  // Regular comment.
+  // Regular comment. 常规注释的结束符 
   const match = /--(\!)?>/.exec(context.source)
-  if (!match) {
+  if (!match) { // 如果没匹配到对应的结束符，则解析的源码source移动到<!--之后，更新相关位置属性，报错
     content = context.source.slice(4)
     advanceBy(context, context.source.length)
     emitError(context, ErrorCodes.EOF_IN_COMMENT)
   } else {
-    if (match.index <= 3) {
+    // match.index表示匹配到的开始位置
+    if (match.index <= 3) { // 不完整的非法注释，如<!--->
       emitError(context, ErrorCodes.ABRUPT_CLOSING_OF_EMPTY_COMMENT)
     }
-    if (match[1]) {
+    if (match[1]) { // 如果是以--!>，报错注释结束符不正确
       emitError(context, ErrorCodes.INCORRECTLY_CLOSED_COMMENT)
     }
+    // 获取注释的内容
     content = context.source.slice(4, match.index)
 
-    // Advancing with reporting nested comments.
+    // Advancing with reporting nested comments. 截取到注释结尾之间的代码，用于后续判断嵌套注释 
     const s = context.source.slice(0, match.index)
+    
+    // 判断嵌套注释符的情况，存在即报错
     let prevIndex = 1,
       nestedIndex = 0
     while ((nestedIndex = s.indexOf('<!--', prevIndex)) !== -1) {
@@ -418,13 +432,20 @@ function parseElement(
   __TEST__ && assert(/^<[a-z]/i.test(context.source))
 
   // Start tag.
+  // 是否在 pre 标签内
   const wasInPre = context.inPre
+  // 是否在 v-pre 指令内
   const wasInVPre = context.inVPre
+  // 是否在 v-pre 指令内
   const parent = last(ancestors)
+  // 解析开始标签，生成一个标签节点，并前进代码到开始标签后
   const element = parseTag(context, TagType.Start, parent)
+  // 是否在 pre 标签的边界
   const isPreBoundary = context.inPre && !wasInPre
+  // 是否在 v-pre 指令的边界
   const isVPreBoundary = context.inVPre && !wasInVPre
 
+  //  自闭和标签检测：手动在自闭和&原生自闭和native elements that can self-close, e.g. `<img>`, `<br>`, `<hr>`
   if (element.isSelfClosing || context.options.isVoidTag(element.tag)) {
     // #4030 self-closing <pre> tag
     if (isPreBoundary) {
@@ -436,10 +457,14 @@ function parseElement(
     return element
   }
 
-  // Children.
+  // Children. 理子节点的逻辑
+  
+  // 先把标签节点添加到ancestors中，入栈
   ancestors.push(element)
   const mode = context.options.getTextMode(element, parent)
+  // 递归解析子节点，传入 ancestors
   const children = parseChildren(context, mode, ancestors)
+  // ancestors 出栈
   ancestors.pop()
 
   // 2.x inline-template compat
@@ -464,12 +489,15 @@ function parseElement(
     }
   }
 
+  // 添加到 children 属性中
   element.children = children
 
-  // End tag.
-  if (startsWithEndTagOpen(context.source, element.tag)) {
+  // End tag. 处理结束标签
+  if (startsWithEndTagOpen(context.source, element.tag)) { // 检测剩余带解析内容中是否包含待结束标签
+    // 解析结束标签，并前进代码到结束标签后
     parseTag(context, TagType.End, parent)
   } else {
+    // 报错，未包含结束标签
     emitError(context, ErrorCodes.X_MISSING_END_TAG, 0, element.loc.start)
     if (context.source.length === 0 && element.tag.toLowerCase() === 'script') {
       const first = children[0]
@@ -479,6 +507,7 @@ function parseElement(
     }
   }
 
+  // 更新标签节点的代码位置，结束位置到结束标签后
   element.loc = getSelection(context, element.loc.start)
 
   if (isPreBoundary) {
@@ -517,6 +546,7 @@ function parseTag(
   type: TagType,
   parent: ElementNode | undefined
 ): ElementNode | undefined {
+  // 匹配 <div> 或 </div>
   __TEST__ && assert(/^<\/?[a-z]/i.test(context.source))
   __TEST__ &&
     assert(
@@ -525,14 +555,19 @@ function parseTag(
 
   // Tag open.
   const start = getCursor(context)
+  //  匹配出开始/结束标签的标签名
   const match = /^<\/?([a-z][^\t\r\n\f />]*)/i.exec(context.source)!
+  // 取出标签名
   const tag = match[1]
   const ns = context.options.getNamespace(tag, parent)
-
+  
+  // 前进代码到标签文本结束位置
   advanceBy(context, match[0].length)
+  // 前进代码到标签文本后面的空白字符后
   advanceSpaces(context)
 
   // save current state in case we need to re-parse attributes with v-pre
+  // 保存当前状态以防我们需要用 v-pre 重新解析属性
   const cursor = getCursor(context)
   const currentSource = context.source
 
@@ -541,10 +576,10 @@ function parseTag(
     context.inPre = true
   }
 
-  // Attributes.
+  // Attributes. 解析标签中的属性，并前进代码到属性后
   let props = parseAttributes(context, type)
 
-  // check v-pre
+  // check v-pre 检查属性中有没有 v-pre 指令
   if (
     type === TagType.Start &&
     !context.inVPre &&
@@ -554,23 +589,27 @@ function parseTag(
     // reset context
     extend(context, cursor)
     context.source = currentSource
-    // re-parse attrs and filter out v-pre itself
+    // re-parse attrs and filter out v-pre itself  重新解析属性，并把 v-pre 过滤了
     props = parseAttributes(context, type).filter(p => p.name !== 'v-pre')
   }
 
-  // Tag close.
+  // Tag close.  闭合标签
   let isSelfClosing = false
   if (context.source.length === 0) {
     emitError(context, ErrorCodes.EOF_IN_TAG)
   } else {
+    // 判断是否自闭合标签
     isSelfClosing = startsWith(context.source, '/>')
+    // 结束标签不应该是自闭和标签
     if (type === TagType.End && isSelfClosing) {
       emitError(context, ErrorCodes.END_TAG_WITH_TRAILING_SOLIDUS)
     }
+
+    // 前进代码到标签结束符后面
     advanceBy(context, isSelfClosing ? 2 : 1)
   }
 
-  if (type === TagType.End) {
+  if (type === TagType.End) {  // 如果是解析的结束标签，此处就已解析完成
     return
   }
 
@@ -606,10 +645,11 @@ function parseTag(
   }
 
   let tagType = ElementTypes.ELEMENT
+  // 判断标签类型，是组件、插槽还是模板
   if (!context.inVPre) {
-    if (tag === 'slot') {
+    if (tag === 'slot') {  // 插槽
       tagType = ElementTypes.SLOT
-    } else if (tag === 'template') {
+    } else if (tag === 'template') {  // 是template：标签名是template，且属性名中自定义指令if,else,else-if,for,slot
       if (
         props.some(
           p =>
@@ -618,7 +658,7 @@ function parseTag(
       ) {
         tagType = ElementTypes.TEMPLATE
       }
-    } else if (isComponent(tag, props, context)) {
+    } else if (isComponent(tag, props, context)) { // 是component，包含component is、内置组件、标签名以大写字母开头
       tagType = ElementTypes.COMPONENT
     }
   }
@@ -967,27 +1007,40 @@ function parseInterpolation(
   const [open, close] = context.options.delimiters
   __TEST__ && assert(startsWith(context.source, open))
 
+  // 未查找到对应的结束符
   const closeIndex = context.source.indexOf(close, open.length)
   if (closeIndex === -1) {
     emitError(context, ErrorCodes.X_MISSING_INTERPOLATION_END)
     return undefined
   }
 
+  // 获取插值语句开始的位置信息
   const start = getCursor(context)
+  // 代码前进到插值开始分隔符后 
   advanceBy(context, open.length)
+  // 内部插值开始的位置
   const innerStart = getCursor(context)
+   // 内部插值结束的位置：与上一个一样
   const innerEnd = getCursor(context)
+  // 插值原始内容长度
   const rawContentLength = closeIndex - open.length
+  // 插值原始内容
   const rawContent = context.source.slice(0, rawContentLength)
+  // 获取插值的内容，并前进代码到插值的内容后 
   const preTrimContent = parseTextData(context, rawContentLength, mode)
+  // 删除插值原始内容的左右空格
   const content = preTrimContent.trim()
+  // 内容相对于插值开始分隔符的头偏移 
   const startOffset = preTrimContent.indexOf(content)
   if (startOffset > 0) {
+    // 更新内部插值开始位置
     advancePositionWithMutation(innerStart, rawContent, startOffset)
   }
   const endOffset =
     rawContentLength - (preTrimContent.length - content.length - startOffset)
+  // 更新内部插值结束位置 
   advancePositionWithMutation(innerEnd, rawContent, endOffset)
+  // 前进代码到插值结束分隔符后 
   advanceBy(context, close.length)
 
   return {
@@ -1007,9 +1060,11 @@ function parseInterpolation(
 function parseText(context: ParserContext, mode: TextModes): TextNode {
   __TEST__ && assert(context.source.length > 0)
 
+  // 文本结束符 
   const endTokens =
     mode === TextModes.CDATA ? [']]>'] : ['<', context.options.delimiters[0]]
-
+  
+  // 遍历文本结束符，匹配找到结束的位置——找到最小的结束位置(内容最短) 
   let endIndex = context.source.length
   for (let i = 0; i < endTokens.length; i++) {
     const index = context.source.indexOf(endTokens[i], 1)
@@ -1021,6 +1076,7 @@ function parseText(context: ParserContext, mode: TextModes): TextNode {
   __TEST__ && assert(endIndex > 0)
 
   const start = getCursor(context)
+  // 获取文本的内容，并前进代码到文本的内容后
   const content = parseTextData(context, endIndex, mode)
 
   return {
@@ -1056,11 +1112,13 @@ function parseTextData(
   }
 }
 
+// 范围位置属性：{ column, line, offset }
 function getCursor(context: ParserContext): Position {
   const { column, line, offset } = context
   return { column, line, offset }
 }
 
+// 返回{start, end, source}
 function getSelection(
   context: ParserContext,
   start: Position,
@@ -1085,7 +1143,9 @@ function startsWith(source: string, searchString: string): boolean {
 function advanceBy(context: ParserContext, numberOfCharacters: number): void {
   const { source } = context
   __TEST__ && assert(numberOfCharacters <= source.length)
+  // 更新context的位置属性line、column、offset
   advancePositionWithMutation(context, source, numberOfCharacters)
+  // 截取剩余的文本
   context.source = source.slice(numberOfCharacters)
 }
 
