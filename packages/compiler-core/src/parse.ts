@@ -264,16 +264,17 @@ function parseChildren(
   // Whitespace handling strategy like v2：空格和空字符串节点合并
   let removedWhitespace = false
   if (mode !== TextModes.RAWTEXT && mode !== TextModes.RCDATA) {
+    // 是否允许浓缩
     const shouldCondense = context.options.whitespace !== 'preserve'
     for (let i = 0; i < nodes.length; i++) {
       const node = nodes[i]
-      if (!context.inPre && node.type === NodeTypes.TEXT) {
-        if (!/[^\t\r\n\f ]/.test(node.content)) {
+      if (!context.inPre && node.type === NodeTypes.TEXT) {  // 是文本节点
+        if (!/[^\t\r\n\f ]/.test(node.content)) { // 是否是全部是空格——不是
           const prev = nodes[i - 1]
           const next = nodes[i + 1]
-          // Remove if:
+          // Remove if: 前或后节点内容不存在，或在浓缩模式下(前/后节点是注释，或前后都是元素但node中包含换行符)
           // - the whitespace is the first or last node, or:
-          // - (condense mode) the whitespace is adjacent to a comment, or:
+          // - (condense mode) the whitespace is adjacent(相邻) to a comment, or:
           // - (condense mode) the whitespace is between two elements AND contains newline
           if (
             !prev ||
@@ -284,27 +285,27 @@ function parseChildren(
                 (prev.type === NodeTypes.ELEMENT &&
                   next.type === NodeTypes.ELEMENT &&
                   /[\r\n]/.test(node.content))))
-          ) {
+          ) {  // 这些空白字符节点都应该被移除
             removedWhitespace = true
             nodes[i] = null as any
-          } else {
-            // Otherwise, the whitespace is condensed into a single space
+          } else { // 压缩这些空白字符到一个空格
+            // Otherwise, the whitespace is condensed(浓缩) into a single space
             node.content = ' '
           }
-        } else if (shouldCondense) {  // 空格合并成一个
+        } else if (shouldCondense) {  // 替换内容中的空白空间到一个空格
           // in condense mode, consecutive whitespaces in text are condensed
           // down to a single space.
           node.content = node.content.replace(/[\t\r\n\f ]+/g, ' ')
         }
       }
-      // Remove comment nodes if desired by configuration.
+      // Remove comment nodes if desired by configuration. 如果配置了移除注释则移除
       else if (node.type === NodeTypes.COMMENT && !context.options.comments) {
         removedWhitespace = true
         nodes[i] = null as any
       }
     }
     if (context.inPre && parent && context.options.isPreTag(parent.tag)) {
-      // remove leading newline per html spec
+      // remove leading newline per html spec 根据 HTML 规范删除前导换行符
       // https://html.spec.whatwg.org/multipage/grouping-content.html#the-pre-element
       const first = nodes[0]
       if (first && first.type === NodeTypes.TEXT) {
@@ -756,9 +757,10 @@ function parseAttributes(
       emitError(context, ErrorCodes.END_TAG_WITH_ATTRIBUTES)
     }
 
+    // 主要分为vue自定义属性(指令、slot)，普通的HTML属性，属性值还是普通的字符串
     const attr = parseAttribute(context, attributeNames)
 
-    // Trim whitespace between class
+    // Trim whitespace between class：class属性——多个空格替换为1个，删除首尾空格
     // https://github.com/vuejs/core/issues/4251
     if (
       attr.type === NodeTypes.ATTRIBUTE &&
@@ -788,19 +790,20 @@ function parseAttribute(
 
   // Name.
   const start = getCursor(context)
+  // 属性名：以非空白字符开头的连续多个非空白字符组成
   const match = /^[^\t\r\n\f />][^\t\r\n\f />=]*/.exec(context.source)!
   const name = match[0]
 
-  if (nameSet.has(name)) {
+  if (nameSet.has(name)) {  // 重复属性名会报错误
     emitError(context, ErrorCodes.DUPLICATE_ATTRIBUTE)
   }
   nameSet.add(name)
 
-  if (name[0] === '=') {
+  if (name[0] === '=') { // 如果属性名以=开头，报错
     emitError(context, ErrorCodes.UNEXPECTED_EQUALS_SIGN_BEFORE_ATTRIBUTE_NAME)
   }
   {
-    const pattern = /["'<]/g
+    const pattern = /["'<]/g // 如果属性名出现了这几个字符，不合法报错
     let m: RegExpExecArray | null
     while ((m = pattern.exec(name))) {
       emitError(
@@ -811,30 +814,37 @@ function parseAttribute(
     }
   }
 
+  // 解析位置前进
   advanceBy(context, name.length)
 
   // Value
   let value: AttributeValue = undefined
 
-  if (/^[\t\r\n\f ]*=/.test(context.source)) {
-    advanceSpaces(context)
-    advanceBy(context, 1)
-    advanceSpaces(context)
-    value = parseAttributeValue(context)
+  if (/^[\t\r\n\f ]*=/.test(context.source)) { // 属性名后面是空白符
+    advanceSpaces(context)  // 前进到空白符之后
+    advanceBy(context, 1)  // 移动到=之后 
+    advanceSpaces(context)  // 前进到空白符之后
+    value = parseAttributeValue(context)  // 解析属性值，不存在之报错
     if (!value) {
       emitError(context, ErrorCodes.MISSING_ATTRIBUTE_VALUE)
     }
   }
   const loc = getSelection(context, start)
 
+  // 解析特殊的属性名：以v-开头\.\:\@\#开头
   if (!context.inVPre && /^(v-[A-Za-z0-9-]|:|\.|@|#)/.test(name)) {
+    /**
+     * /(?:^v-([a-z0-9-]+))?  匹配v-开头，如：v-name.test，结果['v-name.test', 'name', undefined, '.test', index: 0, input: 'v-name.test', groups: undefined]
+       (?:(?::|^\.|^@|^#)(\[[^\]]+\]|[^\.]+))?  如：:name:test，结果 [':name:test', undefined, 'name:test', undefined, index: 0, input: ':name:test', groups: undefined]
+       (.+)?$/
+     */
     const match =
       /(?:^v-([a-z0-9-]+))?(?:(?::|^\.|^@|^#)(\[[^\]]+\]|[^\.]+))?(.+)?$/i.exec(
         name
       )!
 
-    let isPropShorthand = startsWith(name, '.')
-    let dirName =
+    let isPropShorthand = startsWith(name, '.') // 以.开头
+    let dirName = // 指令名为on或slot
       match[1] ||
       (isPropShorthand || startsWith(name, ':')
         ? 'bind'
@@ -843,8 +853,8 @@ function parseAttribute(
         : 'slot')
     let arg: ExpressionNode | undefined
 
-    if (match[2]) {
-      const isSlot = dirName === 'slot'
+    if (match[2]) { // 如果是第二种格式的属性名
+      const isSlot = dirName === 'slot'  // 是信号槽
       const startOffset = name.lastIndexOf(match[2])
       const loc = getSelection(
         context,
@@ -858,16 +868,16 @@ function parseAttribute(
       let content = match[2]
       let isStatic = true
 
-      if (content.startsWith('[')) {
+      if (content.startsWith('[')) { // 例如这种格式：:[name]，则表示不是静态属性名
         isStatic = false
 
-        if (!content.endsWith(']')) {
+        if (!content.endsWith(']')) {  // 获取动态属性名： 如果不是以]结尾，则报错并截取[之后的内容
           emitError(
             context,
             ErrorCodes.X_MISSING_DYNAMIC_DIRECTIVE_ARGUMENT_END
           )
           content = content.slice(1)
-        } else {
+        } else { // 取[]之间的内容
           content = content.slice(1, content.length - 1)
         }
       } else if (isSlot) {
@@ -896,6 +906,7 @@ function parseAttribute(
       valueLoc.source = valueLoc.source.slice(1, -1)
     }
 
+    //  修饰符数组：去除.
     const modifiers = match[3] ? match[3].slice(1).split('.') : []
     if (isPropShorthand) modifiers.push('prop')
 
@@ -924,7 +935,7 @@ function parseAttribute(
     }
 
     return {
-      type: NodeTypes.DIRECTIVE,
+      type: NodeTypes.DIRECTIVE, // vue自定义的属性
       name: dirName,
       exp: value && {
         type: NodeTypes.SIMPLE_EXPRESSION,
@@ -947,7 +958,7 @@ function parseAttribute(
   }
 
   return {
-    type: NodeTypes.ATTRIBUTE,
+    type: NodeTypes.ATTRIBUTE,  // 普通属性
     name,
     value: value && {
       type: NodeTypes.TEXT,
@@ -964,13 +975,13 @@ function parseAttributeValue(context: ParserContext): AttributeValue {
 
   const quote = context.source[0]
   const isQuoted = quote === `"` || quote === `'`
-  if (isQuoted) {
-    // Quoted value.
+  if (isQuoted) { // 属性值是以单双引号开头
+    // Quoted value.  前进到引号之后
     advanceBy(context, 1)
 
-    const endIndex = context.source.indexOf(quote)
-    if (endIndex === -1) {
-      content = parseTextData(
+    const endIndex = context.source.indexOf(quote)  // 后面结束引号的索引
+    if (endIndex === -1) {  // 不存在则把后续所有的值当成属性值进行解析
+      content = parseTextData(  // 获取属性字符串，&可能需要特殊解析
         context,
         context.source.length,
         TextModes.ATTRIBUTE_VALUE
@@ -980,12 +991,12 @@ function parseAttributeValue(context: ParserContext): AttributeValue {
       advanceBy(context, 1)
     }
   } else {
-    // Unquoted
+    // Unquoted：如果属性值位置不是以引号开头，则检测是否以非空白符开始，不是直接返回undefined
     const match = /^[^\t\r\n\f >]+/.exec(context.source)
     if (!match) {
       return undefined
     }
-    const unexpectedChars = /["'<=`]/g
+    const unexpectedChars = /["'<=`]/g  // 属性值中是否包含非法字符，有则逐个报错
     let m: RegExpExecArray | null
     while ((m = unexpectedChars.exec(match[0]))) {
       emitError(
@@ -994,6 +1005,8 @@ function parseAttributeValue(context: ParserContext): AttributeValue {
         m.index
       )
     }
+
+    // 把非空白字符当成属性值解析
     content = parseTextData(context, match[0].length, TextModes.ATTRIBUTE_VALUE)
   }
 
@@ -1087,6 +1100,7 @@ function parseText(context: ParserContext, mode: TextModes): TextNode {
 }
 
 /**
+ * 直接返回属性值字符串：DATA or RCDATA containing "&"". Entity decoding required.
  * Get text data with a given length from the current location.
  * This translates HTML entities in the text data.
  */

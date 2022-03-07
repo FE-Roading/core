@@ -548,12 +548,13 @@ export const locStub: SourceLocation = {
   end: { line: 1, column: 1, offset: 0 }
 }
 
+// 类型设置为根节点，并添加children字段，在添加定位信息loc，其余都默认为空
 export function createRoot(
   children: TemplateChildNode[],
   loc = locStub
 ): RootNode {
   return {
-    type: NodeTypes.ROOT,
+    type: NodeTypes.ROOT, 
     children,
     helpers: [],
     components: [],

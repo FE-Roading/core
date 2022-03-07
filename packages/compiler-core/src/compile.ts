@@ -84,6 +84,7 @@ export function baseCompile(
 
   // 解析 template 生成 AST 
   const ast = isString(template) ? baseParse(template, options) : template
+  // 获取节点和指令转换的方法[[transformOnce, transformIf, ...], { on: transformOn, ...}]
   const [nodeTransforms, directiveTransforms] =
     getBaseTransformPreset(prefixIdentifiers)
 
@@ -94,7 +95,7 @@ export function baseCompile(
     }
   }
 
-  // 解析 template 生成 AST 
+  // AST转换
   transform(
     ast,
     extend({}, options, {
