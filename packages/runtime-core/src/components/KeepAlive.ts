@@ -84,6 +84,7 @@ const KeepAliveImpl: ComponentOptions = {
     max: [String, Number]
   },
 
+  // 组件实例化初始化函数
   setup(props: KeepAliveProps, { slots }: SetupContext) {
     const instance = getCurrentInstance()!
     // KeepAlive communicates with the instantiated renderer via the
@@ -117,12 +118,15 @@ const KeepAliveImpl: ComponentOptions = {
         o: { createElement }
       }
     } = sharedContext
+    // 存放被卸载的节点的元素内容
     const storageContainer = createElement('div')
 
+    // 在组件首次渲染后，后续显示组件会调用该钩子
     sharedContext.activate = (vnode, container, anchor, isSVG, optimized) => {
       const instance = vnode.component!
+      // 挂载节点
       move(vnode, container, anchor, MoveType.ENTER, parentSuspense)
-      // in case props have changed
+      // in case props have changed：重新patch防止节点props更新
       patch(
         instance.vnode,
         vnode,
@@ -134,6 +138,8 @@ const KeepAliveImpl: ComponentOptions = {
         vnode.slotScopeIds,
         optimized
       )
+
+      // 在组件渲染完成后，触发组件的activated&父组件的onVnodeMounted钩子
       queuePostRenderEffect(() => {
         instance.isDeactivated = false
         if (instance.a) {
@@ -151,6 +157,7 @@ const KeepAliveImpl: ComponentOptions = {
       }
     }
 
+    // 组件被卸载时，将节点的内容移动到KeepAlive的内部，并执行组件的deactivated及父组件的onVnodeUnmounted钩子
     sharedContext.deactivate = (vnode: VNode) => {
       const instance = vnode.component!
       move(vnode, storageContainer, null, MoveType.LEAVE, parentSuspense)
@@ -177,6 +184,7 @@ const KeepAliveImpl: ComponentOptions = {
       _unmount(vnode, instance, parentSuspense, true)
     }
 
+     // 组件缓存策略调整时，及时调整缓存的组件内容cache、keys
     function pruneCache(filter?: (name: string) => boolean) {
       cache.forEach((vnode, key) => {
         const name = getComponentName(vnode.type as ConcreteComponent)
@@ -185,7 +193,6 @@ const KeepAliveImpl: ComponentOptions = {
         }
       })
     }
-
     function pruneCacheEntry(key: CacheKey) {
       const cached = cache.get(key) as VNode
       if (!current || cached.type !== current.type) {
@@ -198,20 +205,21 @@ const KeepAliveImpl: ComponentOptions = {
       cache.delete(key)
       keys.delete(key)
     }
-
     // prune cache on include/exclude prop change
     watch(
       () => [props.include, props.exclude],
       ([include, exclude]) => {
+        // 当 include 发生变化的时候，从缓存中删除那些 name 不匹配 include 的 vnode 节点
         include && pruneCache(name => matches(include, name))
+        // 当 exclude 发生变化的时候，从缓存中删除那些 name 匹配 exclude 的 vnode 节点
         exclude && pruneCache(name => !matches(exclude, name))
       },
       // prune post-render after `current` has been updated
       { flush: 'post', deep: true }
     )
 
-    // cache sub tree after render
-    let pendingCacheKey: CacheKey | null = null
+    // cache sub tree after render：在挂载和更新后，需要更新缓存内容
+    let pendingCacheKey: CacheKey | null = null  // 在KeepAlive执行render的时候，pendingCacheKey会被赋值为vnode.key
     const cacheSubtree = () => {
       // fix #1621, the pendingCacheKey could be 0
       if (pendingCacheKey != null) {
@@ -221,6 +229,8 @@ const KeepAliveImpl: ComponentOptions = {
     onMounted(cacheSubtree)
     onUpdated(cacheSubtree)
 
+    // 在卸载之前：遍历所有缓存的vnode，如果缓存的vnode是当前KeepAlive组件渲染的vnode，
+    // 则修改其shapeFlag类型让其在unmount时执行deactivate方法并在完成后执行deactivated钩子
     onBeforeUnmount(() => {
       cache.forEach(cached => {
         const { subTree, suspense } = instance
@@ -244,9 +254,10 @@ const KeepAliveImpl: ComponentOptions = {
         return null
       }
 
+      // 拿到激活的子组件
       const children = slots.default()
       const rawVNode = children[0]
-      if (children.length > 1) {
+      if (children.length > 1) {  // 每次激活的子节点数量最多一个
         if (__DEV__) {
           warn(`KeepAlive should contain exactly one component child.`)
         }
@@ -261,6 +272,7 @@ const KeepAliveImpl: ComponentOptions = {
         return rawVNode
       }
 
+      // 获取vnode，主要时SUSPENSE组件的node内容在子属性上
       let vnode = getInnerChild(rawVNode)
       const comp = vnode.type as ConcreteComponent
 
@@ -272,8 +284,8 @@ const KeepAliveImpl: ComponentOptions = {
           : comp
       )
 
+      // 确定该vnode是否符合缓存配置：不符合缓存配置，直接返回
       const { include, exclude, max } = props
-
       if (
         (include && (!name || !matches(include, name))) ||
         (exclude && name && matches(exclude, name))
@@ -282,9 +294,9 @@ const KeepAliveImpl: ComponentOptions = {
         return rawVNode
       }
 
+      // 缓存vnode：已缓存则更新缓存内容并将key置为最新；未缓存则新添加，如果超过缓存上限，则删除一个最早缓存的内容
       const key = vnode.key == null ? comp : vnode.key
       const cachedVNode = cache.get(key)
-
       // clone vnode if it's reused because we are going to mutate it
       if (vnode.el) {
         vnode = cloneVNode(vnode)
@@ -298,7 +310,6 @@ const KeepAliveImpl: ComponentOptions = {
       // key and cache `instance.subTree` (the normalized vnode) in
       // beforeMount/beforeUpdate hooks.
       pendingCacheKey = key
-
       if (cachedVNode) {
         // copy over mounted state
         vnode.el = cachedVNode.el
@@ -307,14 +318,14 @@ const KeepAliveImpl: ComponentOptions = {
           // recursively update transition hooks on subTree
           setTransitionHooks(vnode, vnode.transition!)
         }
-        // avoid vnode being mounted as fresh
+        // avoid vnode being mounted as fresh：避免vnode节点作为新节点被挂载
         vnode.shapeFlag |= ShapeFlags.COMPONENT_KEPT_ALIVE
-        // make this key the freshest
+        // make this key the freshest：让组件的缓存保持为最新
         keys.delete(key)
         keys.add(key)
       } else {
         keys.add(key)
-        // prune oldest entry
+        // prune oldest entry：如果设置了缓存上限的，删除最久不用的 key，符合 LRU 思想
         if (max && keys.size > parseInt(max as string, 10)) {
           pruneCacheEntry(keys.values().next().value)
         }
