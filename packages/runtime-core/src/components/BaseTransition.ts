@@ -149,6 +149,7 @@ const BaseTransitionImpl: ComponentOptions = {
       }
 
       // warn multiple elements
+      // Transition 组件只允许一个子元素节点，多个报警告，提示使用 TransitionGroup 组件
       if (__DEV__ && children.length > 1) {
         warn(
           '<transition> can only be used on a single element or component. Use ' +
@@ -157,10 +158,10 @@ const BaseTransitionImpl: ComponentOptions = {
       }
 
       // there's no need to track reactivity for these props so use the raw
-      // props for a bit better perf
+      // props for a bit better perf  不需要追踪响应式，所以改成原始值，提升性能
       const rawProps = toRaw(props)
       const { mode } = rawProps
-      // check mode
+      // check mode  检查mode是否合法
       if (
         __DEV__ &&
         mode &&
@@ -175,8 +176,8 @@ const BaseTransitionImpl: ComponentOptions = {
         return emptyPlaceholder(child)
       }
 
-      // in the case of <transition><keep-alive/></transition>, we need to
-      // compare the type of the kept-alive children.
+      // in the case of <transition><keep-alive/></transition>, we need to compare the type of the kept-alive children.
+      // 处理 <transition><keep-alive/></transition>的情况：是的话取第一个child
       const innerChild = getKeepAliveChild(child)
       if (!innerChild) {
         return emptyPlaceholder(child)
@@ -218,11 +219,13 @@ const BaseTransitionImpl: ComponentOptions = {
           instance
         )
         // update old tree's hooks in case of dynamic transition
+        // 更新旧树的钩子函数
         setTransitionHooks(oldInnerChild, leavingHooks)
-        // switching between different views
+        // switching between different views 在两个视图之间切换
         if (mode === 'out-in') {
           state.isLeaving = true
           // return placeholder node and queue update when leave finishes
+          // 返回空的占位符节点，当离开过渡结束后，重新渲染组件
           leavingHooks.afterLeave = () => {
             state.isLeaving = false
             instance.update()
@@ -308,6 +311,7 @@ export function resolveTransitionHooks(
   const key = String(vnode.key)
   const leavingVNodesCache = getLeavingNodesForType(state, vnode)
 
+  // 钩子函数调用封装
   const callHook: TransitionHookCaller = (hook, args) => {
     hook &&
       callWithAsyncErrorHandling(
@@ -318,6 +322,7 @@ export function resolveTransitionHooks(
       )
   }
 
+  // 钩子实例对象封装
   const hooks: TransitionHooks<TransitionElement> = {
     mode,
     persisted,

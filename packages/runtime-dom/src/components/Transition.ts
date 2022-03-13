@@ -108,6 +108,7 @@ const hasExplicitCallback = (
 export function resolveTransitionProps(
   rawProps: TransitionProps
 ): BaseTransitionProps<Element> {
+  // 读取所有的css属性
   const baseProps: BaseTransitionProps<Element> = {}
   for (const key in rawProps) {
     if (!(key in DOMTransitionPropsValidators)) {
@@ -115,10 +116,12 @@ export function resolveTransitionProps(
     }
   }
 
+  // 是否开启css动画，未开启则直接返回css的相关属性
   if (rawProps.css === false) {
     return baseProps
   }
 
+  // css类名格式化：默认是以v开头，通过props.name可以调整
   const {
     name = 'v',
     type,
@@ -154,9 +157,11 @@ export function resolveTransitionProps(
     }
   }
 
+  // duration属性格式化：支持数值和对象({enter, leave})，返回[enter, leave]——都是数值
   const durations = normalizeDuration(duration)
   const enterDuration = durations && durations[0]
   const leaveDuration = durations && durations[1]
+  // 解析出js相关的钩子
   const {
     onBeforeEnter,
     onEnter,
@@ -168,23 +173,26 @@ export function resolveTransitionProps(
     onAppearCancelled = onEnterCancelled
   } = baseProps
 
+  // enter/leave完成后，移除css类名并执行回调函数
   const finishEnter = (el: Element, isAppear: boolean, done?: () => void) => {
     removeTransitionClass(el, isAppear ? appearToClass : enterToClass)
     removeTransitionClass(el, isAppear ? appearActiveClass : enterActiveClass)
     done && done()
   }
-
   const finishLeave = (el: Element, done?: () => void) => {
     removeTransitionClass(el, leaveToClass)
     removeTransitionClass(el, leaveActiveClass)
     done && done()
   }
 
+  // 调用appear/enter钩子，过渡完成后执行finishEnter钩子
   const makeEnterHook = (isAppear: boolean) => {
     return (el: Element, done: () => void) => {
       const hook = isAppear ? onAppear : onEnter
       const resolve = () => finishEnter(el, isAppear, done)
       callHook(hook, [el, resolve])
+
+      // 通过两个requestAnimationFrame执行cb
       nextFrame(() => {
         removeTransitionClass(el, isAppear ? appearFromClass : enterFromClass)
         if (__COMPAT__ && legacyClassEnabled) {
@@ -203,7 +211,10 @@ export function resolveTransitionProps(
 
   return extend(baseProps, {
     onBeforeEnter(el) {
+      // 调用所有的onBeforeEnter钩子
       callHook(onBeforeEnter, [el])
+
+      // 给DOM元素el添加了enterActiveClass和enterFromClass样式。
       addTransitionClass(el, enterFromClass)
       if (__COMPAT__ && legacyClassEnabled) {
         addTransitionClass(el, legacyEnterFromClass)
