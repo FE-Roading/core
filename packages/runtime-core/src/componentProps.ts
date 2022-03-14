@@ -152,16 +152,18 @@ export type NormalizedPropsOptions = [NormalizedProps, string[]] | []
 
 export function initProps(
   instance: ComponentInternalInstance,
-  rawProps: Data | null,
+  rawProps: Data | null,  // 定义的原始属性
   isStateful: number, // result of bitwise flag comparison
   isSSR = false
 ) {
   const props: Data = {}
+  // 为attrs配置一个不可枚举属性__vInternal，默认值1
   const attrs: Data = {}
   def(attrs, InternalObjectKey, 1)
 
   instance.propsDefaults = Object.create(null)
 
+  // 设置 props 的值
   setFullProps(instance, rawProps, props, attrs)
 
   // ensure all declared prop keys are present
@@ -177,17 +179,19 @@ export function initProps(
   }
 
   if (isStateful) {
-    // stateful
+    // stateful：有状态组件，则将props转换为shallowReactive
     instance.props = isSSR ? props : shallowReactive(props)
   } else {
     if (!instance.type.props) {
-      // functional w/ optional props, props === attrs
+      // functional w/ optional props, props === attrs  函数式组件
       instance.props = attrs
     } else {
       // functional w/ declared props
       instance.props = props
     }
   }
+
+  // 普通属性赋值
   instance.attrs = attrs
 }
 
@@ -321,18 +325,32 @@ export function updateProps(
   }
 }
 
+/**
+ * 返回boolean：表示是否有attrs属性
+ * 1、从解析好的属性中复制属性配置：删除保留字段，如果在vnode.props中但未在解析好的props中且不属于emits属性则默认为attrs属性
+ * 2、对于需要设置初始化值的属性，遍历根据配置生成默认值
+ * @param instance 
+ * @param rawProps 
+ * @param props 
+ * @param attrs 
+ * @returns 
+ */
 function setFullProps(
   instance: ComponentInternalInstance,
-  rawProps: Data | null,
-  props: Data,
-  attrs: Data
+  rawProps: Data | null,  // 来自 compiler 阶段编译后的 vnode.props
+  props: Data,  // 用于存储解析后的 props 数据
+  attrs: Data  // 用于存储解析后的普通属性数据
 ) {
+  // needCastKeys是需要对属性值进行处理或者叫初始化的keys
+  // options是所有已定义在组件上的props和mixins或extends的属性对象
   const [options, needCastKeys] = instance.propsOptions
-  let hasAttrsChanged = false
-  let rawCastValues: Data | undefined
+  let hasAttrsChanged = false  // 是定义了attrs属性
+  let rawCastValues: Data | undefined  // 需要处理默认值的props
+
   if (rawProps) {
+    // 原始属性字段依次遍历
     for (let key in rawProps) {
-      // key, ref are reserved and never passed down
+      // key, ref are reserved and never passed down：排除一些保留的 prop，如ref、key
       if (isReservedProp(key)) {
         continue
       }
@@ -353,13 +371,16 @@ function setFullProps(
       const value = rawProps[key]
       // prop option names are camelized during normalization, so to support
       // kebab -> camel conversion here we need to camelize the key.
+      // 连字符形式的属性名转成驼峰形式，如果在一个格式化的props中且
       let camelKey
       if (options && hasOwn(options, (camelKey = camelize(key)))) {
+        // 不需要处理默认值的属性直接复制
         if (!needCastKeys || !needCastKeys.includes(camelKey)) {
           props[camelKey] = value
-        } else {
+        } else {  // 需要处理默认值的属性/值收集
           ;(rawCastValues || (rawCastValues = {}))[camelKey] = value
         }
+        // 非事件派发相关的，且不在 props 中定义的普通属性用 attrs 保留
       } else if (!isEmitListener(instance.emitsOptions, key)) {
         // Any non-declared (either as a prop or an emitted event) props are put
         // into a separate `attrs` object for spreading. Make sure to preserve
@@ -379,6 +400,7 @@ function setFullProps(
     }
   }
 
+  // 需要处理的属性字段：遍历设置具体的值
   if (needCastKeys) {
     const rawCurrentProps = toRaw(props)
     const castValues = rawCastValues || EMPTY_OBJ
@@ -412,8 +434,10 @@ function resolvePropValue(
     // default values
     if (hasDefault && value === undefined) {
       const defaultValue = opt.default
+      // {foo: { default: function() {/*...*/} }}处理
       if (opt.type !== Function && isFunction(defaultValue)) {
         const { propsDefaults } = instance
+        // 已缓存结果 则直接复制
         if (key in propsDefaults) {
           value = propsDefaults[key]
         } else {
@@ -428,14 +452,15 @@ function resolvePropValue(
           unsetCurrentInstance()
         }
       } else {
+        // {foo: { default: function() {/*...*/}, type: Function }}和{foo: {default: 100}}不进行任何处理
         value = defaultValue
       }
     }
     // boolean casting
     if (opt[BooleanFlags.shouldCast]) {
-      if (isAbsent && !hasDefault) {
+      if (isAbsent && !hasDefault) {  // 定义中只有Boolean类型，且没有默认值的，将默认值设置为false
         value = false
-      } else if (
+      } else if ( // 定义格式：{foo: [Boolean, String]}或{foo: [Boolean]}，在value为空字符时，设置为true
         opt[BooleanFlags.shouldCastTrue] &&
         (value === '' || value === hyphenate(key))
       ) {
@@ -446,23 +471,34 @@ function resolvePropValue(
   return value
 }
 
+/**
+ * 属性名转换：连字符转换为小写驼峰格式
+ * @param comp 
+ * @param appContext 
+ * @param asMixin 
+ * @returns 
+ */
 export function normalizePropsOptions(
   comp: ConcreteComponent,
   appContext: AppContext,
   asMixin = false
 ): NormalizedPropsOptions {
-  const cache = appContext.propsCache
+  // 缓存中已存在该组件的props格式化结果，则直接返回
+  const cache = appContext.propsCache  // WeakMap
   const cached = cache.get(comp)
   if (cached) {
     return cached
   }
 
   const raw = comp.props
-  const normalized: NormalizedPropsOptions[0] = {}
-  const needCastKeys: NormalizedPropsOptions[1] = []
-
+  // 保存已规范格式的props
+  const normalized: NormalizedPropsOptions[0] = {} 
+  // 表示是需要对属性值进行处理或者叫初始化的keys
+  // 如{foo: Boolean, bar: { default: 1 }}，那么foo要在setFullProps()里面转成false值，以及bar=1
+ const needCastKeys: NormalizedPropsOptions[1] = []
   // apply mixin/extends props
-  let hasExtends = false
+  let hasExtends = false // 是否有继承自mixin/extends的属性
+  // 复制app的mixins、com.extends、com.mixins内容到normalized、needCastKeys中
   if (__FEATURE_OPTIONS_API__ && !isFunction(comp)) {
     const extendProps = (raw: ComponentOptions) => {
       if (__COMPAT__ && isFunction(raw)) {
@@ -484,11 +520,13 @@ export function normalizePropsOptions(
     }
   }
 
+  // 如果本身没有定义props、也未有继承和扩展属性，则直接返回空对象
   if (!raw && !hasExtends) {
     cache.set(comp, EMPTY_ARR as any)
     return EMPTY_ARR as any
   }
 
+  // 数组形式的props定义，如：props: ['name']格式，处理成 { name: {} }
   if (isArray(raw)) {
     for (let i = 0; i < raw.length; i++) {
       if (__DEV__ && !isString(raw[i])) {
@@ -500,22 +538,31 @@ export function normalizePropsOptions(
       }
     }
   } else if (raw) {
+    // props: { name: String, auth: [String, Number] }格式
+    // 统一处理成 { name: { type: String }, auth: { type: [String, Number] } }
     if (__DEV__ && !isObject(raw)) {
       warn(`invalid props options`, raw)
     }
     for (const key in raw) {
       const normalizedKey = camelize(key)
+      // 属性名不是以$开头，因为这是vue的保留属性格式
       if (validatePropName(normalizedKey)) {
         const opt = raw[key]
         const prop: NormalizedProp = (normalized[normalizedKey] =
           isArray(opt) || isFunction(opt) ? { type: opt } : opt)
+
+        // 检测是否 需要对属性值进行处理或者叫初始化的keys
+        // 1、Boolean属性在后续的处理中
+        // 2、属性有default选项的
         if (prop) {
           const booleanIndex = getTypeIndex(Boolean, prop.type)
           const stringIndex = getTypeIndex(String, prop.type)
+          // 需要处理：只有Boolean类型
           prop[BooleanFlags.shouldCast] = booleanIndex > -1
+          // 定义格式：{foo: [Boolean, String]}或{foo: [Boolean]}，需要处理为true
           prop[BooleanFlags.shouldCastTrue] =
             stringIndex < 0 || booleanIndex < stringIndex
-          // if the prop needs boolean casting or default value
+          // if the prop needs boolean casting or default value：
           if (booleanIndex > -1 || hasOwn(prop, 'default')) {
             needCastKeys.push(normalizedKey)
           }
@@ -524,6 +571,7 @@ export function normalizePropsOptions(
     }
   }
 
+  // 缓存结果并返回
   const res: NormalizedPropsOptions = [normalized, needCastKeys]
   cache.set(comp, res)
   return res

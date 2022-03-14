@@ -483,7 +483,7 @@ export function createComponentInstance(
     directives: null,  // 已注册的指令
 
     // resolved props and emits options
-    propsOptions: normalizePropsOptions(type, appContext),
+    propsOptions: normalizePropsOptions(type, appContext),  // 格式化props内容并缓存
     emitsOptions: normalizeEmitsOptions(type, appContext),
 
     // emit
