@@ -152,7 +152,7 @@ export type NormalizedPropsOptions = [NormalizedProps, string[]] | []
 
 export function initProps(
   instance: ComponentInternalInstance,
-  rawProps: Data | null,  // 定义的原始属性
+  rawProps: Data | null,  // 组件实例化时，传入的props数据
   isStateful: number, // result of bitwise flag comparison
   isSSR = false
 ) {
@@ -163,7 +163,7 @@ export function initProps(
 
   instance.propsDefaults = Object.create(null)
 
-  // 设置 props 的值
+  // 设置组件实例的有效props值，开始区分props和attrs
   setFullProps(instance, rawProps, props, attrs)
 
   // ensure all declared prop keys are present
@@ -182,6 +182,8 @@ export function initProps(
     // stateful：有状态组件，则将props转换为shallowReactive
     instance.props = isSSR ? props : shallowReactive(props)
   } else {
+    // 如果是函数组件，一般没有 props 属性，除非手动给函数增加一个 props
+    // 不过一般不这么用，如果有props建议还是用对象组件，所以这里等于说函数的props即attrs， attrs即props
     if (!instance.type.props) {
       // functional w/ optional props, props === attrs  函数式组件
       instance.props = attrs
@@ -337,8 +339,8 @@ export function updateProps(
  */
 function setFullProps(
   instance: ComponentInternalInstance,
-  rawProps: Data | null,  // 来自 compiler 阶段编译后的 vnode.props
-  props: Data,  // 用于存储解析后的 props 数据
+  rawProps: Data | null,  // 父组件引用组件时，传入的原始属性数据，来自compiler的解析结果
+  props: Data,  // 用于存储解析后，组件实例有效的props数据
   attrs: Data  // 用于存储解析后的普通属性数据
 ) {
   // needCastKeys是需要对属性值进行处理或者叫初始化的keys
@@ -626,6 +628,7 @@ function validateProps(
       key,
       resolvedValues[key],
       opt,
+      // 该属性是否是未设置值
       !hasOwn(rawProps, key) && !hasOwn(rawProps, hyphenate(key))
     )
   }
@@ -638,40 +641,42 @@ function validateProp(
   name: string,
   value: unknown,
   prop: PropOptions,
-  isAbsent: boolean
+  isAbsent: boolean  // 该属性是否是未设置值
 ) {
   const { type, required, validator } = prop
-  // required!
+  // required!  缺失值的属性，如果定义的是必填项，则警告
   if (required && isAbsent) {
     warn('Missing required prop: "' + name + '"')
     return
   }
-  // missing but optional
+  // missing but optional 无值的可选属性不需要校验
   if (value == null && !prop.required) {
     return
   }
-  // type check
+  // type check：类型检测
   if (type != null && type !== true) {
     let isValid = false
-    const types = isArray(type) ? type : [type]
+    const types = isArray(type) ? type : [type]  // 类型要求统一转换为数组格式
     const expectedTypes = []
-    // value is valid as long as one of the specified types match
+    // value is valid as long as one of the specified types match 值满足一种类型即可
     for (let i = 0; i < types.length && !isValid; i++) {
+      // 校验值类型是否符合要求
       const { valid, expectedType } = assertType(value, types[i])
       expectedTypes.push(expectedType || '')
       isValid = valid
     }
-    if (!isValid) {
+    if (!isValid) {  // 最终检测结果是无效，则警告
       warn(getInvalidTypeMessage(name, value, expectedTypes))
       return
     }
   }
-  // custom validator
+  // custom validator  运行自定义校验器
   if (validator && !validator(value)) {
     warn('Invalid prop: custom validator check failed for prop "' + name + '".')
   }
 }
 
+// Record<string, boolean>
 const isSimpleType = /*#__PURE__*/ makeMap(
   'String,Number,Boolean,Function,Symbol,BigInt'
 )
@@ -686,18 +691,19 @@ type AssertionResult = {
  */
 function assertType(value: unknown, type: PropConstructor): AssertionResult {
   let valid
-  const expectedType = getType(type)
+  const expectedType = getType(type)  // 返回包装类型字符串，如String——>String
+  // 基础类型：'String,Number,Boolean,Function,Symbol,BigInt'
   if (isSimpleType(expectedType)) {
     const t = typeof value
     valid = t === expectedType.toLowerCase()
-    // for primitive wrapper objects
+    // for primitive wrapper objects 包装类型，如new String("dddd")
     if (!valid && t === 'object') {
       valid = value instanceof type
     }
   } else if (expectedType === 'Object') {
-    valid = isObject(value)
+    valid = isObject(value)  // 非null，并使用typeof检测
   } else if (expectedType === 'Array') {
-    valid = isArray(value)
+    valid = isArray(value)  // Array.isArray
   } else if (expectedType === 'null') {
     valid = value === null
   } else {

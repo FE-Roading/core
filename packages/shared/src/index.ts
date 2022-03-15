@@ -109,7 +109,7 @@ export const camelize = cacheStringFunction((str: string): string => {
 
 const hyphenateRE = /\B([A-Z])/g
 /**
- * @private
+ * @private: 将驼峰写法转为连字符。将所有非边界的大写字母转为 -大写字母格式，再整体转为小写。转会结果会有缓存
  */
 export const hyphenate = cacheStringFunction((str: string) =>
   str.replace(hyphenateRE, '-$1').toLowerCase()
